@@ -15,7 +15,7 @@ The library is intended for use cases such as:
 - Safely extending applications without granting guest code access to the host environment.
 - Building higher-level products that need deterministic, inspectable JavaScript execution.
 
-VMJS is not intended to be a thin wrapper around unsafe host evaluation primitives. Security should come from the VM boundary itself, not from asking users to remember every dangerous edge case.
+VMJS is not intended to be a thin wrapper around unsafe host evaluation primitives. Security should come from the VM boundary itself, not from asking users to remember every dangerous edge case. The current implementation follows this by parsing guest source and interpreting supported AST nodes directly, without using host `eval`, indirect `eval`, `Function`, `AsyncFunction`, or dynamic `import()` to execute guest source.
 
 ## Core principles
 
@@ -36,7 +36,7 @@ Unsafe behavior, if ever supported, must require explicit and clearly named opt-
 
 The boundary between the host and the VM must be obvious in both implementation and API design.
 
-Guest code should only cross into the host through explicit capabilities, imports, bindings, callbacks, or message-like APIs provided by the host. Host code should only observe or mutate guest state through explicit VM APIs.
+Guest code should only cross into the host through explicit capabilities, imports, bindings, callbacks, or message-like APIs provided by the host. Host code should only observe or mutate guest state through explicit VM APIs. Values that cross the current host/guest boundary must serialize and reconstruct into fresh values; host functions are represented as capabilities whose arguments and results also serialize and reconstruct.
 
 There must be no accidental boundary crossing through prototype inheritance, shared mutable intrinsics, leaked constructors, getters, symbols, error stacks, host object identity, or implicit global access.
 
@@ -98,7 +98,7 @@ The library needs protections against:
 - Accidental retention of powerful host references.
 - Confused-deputy behavior where a safe-looking capability exposes broader host authority.
 
-The VM should prefer copying, wrapping, freezing, membrane-style boundaries, or internal representations over directly sharing dangerous host objects.
+The VM should prefer serialization/reconstruction, copying, freezing, and internal representations over directly sharing dangerous host objects. Designs that introduce wrappers or membranes must still avoid shared host/guest object identity and mutable references.
 
 Security-sensitive behavior must be covered by tests and documented clearly.
 
