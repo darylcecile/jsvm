@@ -1,0 +1,33 @@
+{
+  "name": "@catmint-fs/jsvm",
+  "version": "0.1.1",
+  "description": "VM for JS in JS",
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "bun@1.3.10",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --target bun --format esm && tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test262": "bun scripts/run-test262.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.1",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "acorn": "^8.16.0"
+  }
+}
