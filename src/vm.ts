@@ -1388,11 +1388,11 @@ function collectPatternBoundNames(pattern: ASTNode): readonly string[] {
 
 function allocateModuleTemporaryName(usedTopLevelNames: Set<string>): string {
   let index = 0;
-  let name = "__vmjs_module_default__";
+  let name = "__jsvm_module_default__";
 
   while (usedTopLevelNames.has(name)) {
     index += 1;
-    name = `__vmjs_module_default_${index}__`;
+    name = `__jsvm_module_default_${index}__`;
   }
 
   usedTopLevelNames.add(name);

@@ -97,7 +97,7 @@ describe("VM", () => {
   });
 
   test("evaluates public VM source through the interpreter without host eval or Function", async () => {
-    const marker = "__vmjsHostExecutionCanary";
+    const marker = "__jsvmHostExecutionCanary";
     const hostGlobal = globalThis as typeof globalThis & {
       [marker]?: unknown;
       Function: FunctionConstructor;
@@ -257,11 +257,11 @@ describe("VM", () => {
 
   test("treats constructor-like names as VM data without exposing host objects", async () => {
     const hostGlobal = globalThis as typeof globalThis & {
-      vmjsEscapedFromTest?: unknown;
+      jsvmEscapedFromTest?: unknown;
     };
     const vm = new VM();
     await vm.start();
-    delete hostGlobal.vmjsEscapedFromTest;
+    delete hostGlobal.jsvmEscapedFromTest;
 
     try {
       expect(await vm.eval(`
@@ -302,7 +302,7 @@ describe("VM", () => {
         "([]).filter[\"constr\" + \"uctor\"](\"return pro\" + \"cess.version\")()",
         "([]).filter[`constr` + `uctor`](\"return global\" + \"This\")()",
         "({}).toString[\"constr\\u0075\" + \"ctor\"](\"return pro\" + \"cess\")()",
-        "([]).filter[\"constr\" + \"uctor\"](\"global\" + \"This.vmjsEscapedFromTest = 1; return 0\")()",
+        "([]).filter[\"constr\" + \"uctor\"](\"global\" + \"This.jsvmEscapedFromTest = 1; return 0\")()",
       ]) {
         expectVMFailure(await vm.eval(source), VMErrorCode.VMRuntimeError);
       }
@@ -327,9 +327,9 @@ describe("VM", () => {
         ok: true,
         value: true,
       });
-      expect(hostGlobal.vmjsEscapedFromTest).toBeUndefined();
+      expect(hostGlobal.jsvmEscapedFromTest).toBeUndefined();
     } finally {
-      delete hostGlobal.vmjsEscapedFromTest;
+      delete hostGlobal.jsvmEscapedFromTest;
     }
   });
 
@@ -378,7 +378,7 @@ describe("VM", () => {
   });
 
   test("keeps dynamic code execution inside the VM boundary", async () => {
-    const marker = "__vmjsDynamicCodeBoundary";
+    const marker = "__jsvmDynamicCodeBoundary";
     const hostGlobal = globalThis as typeof globalThis & {
       [marker]?: unknown;
       Function: FunctionConstructor;
@@ -914,7 +914,7 @@ describe("VM", () => {
   });
 
   test("unsupported public VM syntax fails clearly without host fallback execution", async () => {
-    const marker = "__vmjsUnsupportedSyntaxCanary";
+    const marker = "__jsvmUnsupportedSyntaxCanary";
     const hostGlobal = globalThis as typeof globalThis & {
       [marker]?: unknown;
     };

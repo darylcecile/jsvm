@@ -4,7 +4,7 @@ import { parseProgram } from "../src/parser";
 
 describe("parser", () => {
   test("parses scripts by default without executing source", () => {
-    const marker = "__vmjsParserShouldNotExecute";
+    const marker = "__jsvmParserShouldNotExecute";
     delete (globalThis as Record<string, unknown>)[marker];
 
     const program = parseProgram(

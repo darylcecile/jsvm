@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "vmjs",
+      "name": "@catmint-fs/jsvm",
       "dependencies": {
         "acorn": "^8.16.0",
       },

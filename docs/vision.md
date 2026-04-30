@@ -1,12 +1,12 @@
-# VMJS vision
+# JSVM vision
 
-VMJS is a TypeScript library for creating secure-by-default JavaScript virtual machines that can run arbitrary, user-generated, or otherwise untrusted JavaScript code.
+JSVM is a TypeScript library for creating secure-by-default JavaScript virtual machines that can run arbitrary, user-generated, or otherwise untrusted JavaScript code.
 
 The library should work in browsers and other standards-based JavaScript hosts without relying on Node.js, Bun, filesystem, process, native module, or server-only APIs. Its core purpose is to give application developers a clear and intentional boundary between their host application and guest JavaScript code.
 
 ## What we are building
 
-VMJS provides isolated JavaScript execution environments with explicit host-to-guest and guest-to-host communication. A VM should be able to evaluate JavaScript, maintain its own global scope, expose only the capabilities the host deliberately provides, and return results in a controlled way.
+JSVM provides isolated JavaScript execution environments with explicit host-to-guest and guest-to-host communication. A VM should be able to evaluate JavaScript, maintain its own global scope, expose only the capabilities the host deliberately provides, and return results in a controlled way.
 
 The library is intended for use cases such as:
 
@@ -15,7 +15,7 @@ The library is intended for use cases such as:
 - Safely extending applications without granting guest code access to the host environment.
 - Building higher-level products that need deterministic, inspectable JavaScript execution.
 
-VMJS is not intended to be a thin wrapper around unsafe host evaluation primitives. Security should come from the VM boundary itself, not from asking users to remember every dangerous edge case. The current implementation follows this by parsing guest source and interpreting supported AST nodes directly, without using host `eval`, indirect `eval`, `Function`, `AsyncFunction`, or dynamic `import()` to execute guest source.
+JSVM is not intended to be a thin wrapper around unsafe host evaluation primitives. Security should come from the VM boundary itself, not from asking users to remember every dangerous edge case. The current implementation follows this by parsing guest source and interpreting supported AST nodes directly, without using host `eval`, indirect `eval`, `Function`, `AsyncFunction`, or dynamic `import()` to execute guest source.
 
 ## Core principles
 
@@ -71,7 +71,7 @@ Browser compatibility should be treated as a design constraint, not as a later a
 
 ### Latest ECMAScript support
 
-VMJS should aim to support the latest ECMAScript standard and remain maintainable as the language evolves.
+JSVM should aim to support the latest ECMAScript standard and remain maintainable as the language evolves.
 
 The architecture should make it realistic to add or update support for:
 
@@ -85,7 +85,7 @@ Language support should be tested against clear compatibility expectations rathe
 
 ## Security necessities
 
-VMJS must treat isolation as a primary product requirement.
+JSVM must treat isolation as a primary product requirement.
 
 The library needs protections against:
 
@@ -104,7 +104,7 @@ Security-sensitive behavior must be covered by tests and documented clearly.
 
 ## Execution necessities
 
-VMJS should provide practical controls for running untrusted code.
+JSVM should provide practical controls for running untrusted code.
 
 The library should support:
 
@@ -135,7 +135,7 @@ The public API should be simple, explicit, and hard to misuse.
 A possible direction:
 
 ```ts
-import { VM, networkRule } from "vmjs";
+import { VM, networkRule } from "@catmint-fs/jsvm";
 
 const vm = new VM({
 	capabilities: {
@@ -212,7 +212,7 @@ Potential public concepts:
 
 ## Developer experience goals
 
-VMJS should feel like a normal modern npm library.
+JSVM should feel like a normal modern npm library.
 
 The project should provide:
 
@@ -229,7 +229,7 @@ The library should be easy to install, import, tree-shake, test, and bundle in b
 
 ## Non-goals
 
-VMJS should avoid scope creep that weakens the security model.
+JSVM should avoid scope creep that weakens the security model.
 
 Initial non-goals:
 
@@ -254,7 +254,7 @@ That means:
 
 ## Definition of success
 
-VMJS succeeds when a developer can confidently create a VM, run untrusted JavaScript in it, provide only intentional capabilities, and understand exactly how data crosses the host-guest boundary.
+JSVM succeeds when a developer can confidently create a VM, run untrusted JavaScript in it, provide only intentional capabilities, and understand exactly how data crosses the host-guest boundary.
 
 The library should make safe usage straightforward, unsafe usage (limited and) obvious, and future ECMAScript maintenance achievable.
 

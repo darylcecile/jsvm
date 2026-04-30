@@ -1,25 +1,25 @@
-# vmjs
+# @catmint-fs/jsvm
 
-VMJS is a TypeScript library for creating secure-by-default JavaScript virtual machines in JavaScript. It is intended for browser-compatible hosts and for applications that need an explicit boundary between host code and guest-authored JavaScript.
+JSVM is a TypeScript library for creating secure-by-default JavaScript virtual machines in JavaScript. It is intended for browser-compatible hosts and for applications that need an explicit boundary between host code and guest-authored JavaScript.
 
-Guest source is parsed into an AST and executed by VMJS's own interpreter. VMJS does **not** execute guest source with host `eval`, indirect `eval`, `Function`, `AsyncFunction`, or dynamic `import()`.
+Guest source is parsed into an AST and executed by JSVM's own interpreter. JSVM does **not** execute guest source with host `eval`, indirect `eval`, `Function`, `AsyncFunction`, or dynamic `import()`.
 
-> Status: early implementation. The public API below reflects what is implemented today. Do not treat VMJS as a replacement for process, worker, iframe, or OS-level sandboxing when you need hard resource isolation.
+> Status: early implementation. The public API below reflects what is implemented today. Do not treat JSVM as a replacement for process, worker, iframe, or OS-level sandboxing when you need hard resource isolation.
 
 ## Installation
 
 ```sh
-bun add vmjs
+bun add @catmint-fs/jsvm
 ```
 
 ```ts
-import { VM, networkRule, VMErrorCode } from "vmjs";
+import { VM, networkRule, VMErrorCode } from "@catmint-fs/jsvm";
 ```
 
 ## Quick start
 
 ```ts
-import { VM } from "vmjs";
+import { VM } from "@catmint-fs/jsvm";
 
 const vm = new VM({
   globals: {
@@ -50,7 +50,7 @@ vm.dispose();
 
 ## Execution architecture
 
-VMJS uses a custom parser/interpreter pipeline:
+JSVM uses a custom parser/interpreter pipeline:
 
 1. `parseProgram()` parses source with Acorn and produces an AST. Parsing does not execute source.
 2. The interpreter walks supported AST nodes inside VM-owned lexical/global environments.
@@ -115,7 +115,7 @@ interface VMOptions {
 
 `capabilities.dynamicCode` defaults to `false`. When set to `true`, the VM installs VM-owned interpreted `eval`, `Function`, and `AsyncFunction` globals. These parse source strings and execute through the interpreter; they still do not use host `eval`, `Function`, `AsyncFunction`, or dynamic `import()`.
 
-`capabilities.moduleLoader` is the only way ES modules can load dependencies. `evaluate(source, { sourceType: "module" })` evaluates an entry module and returns its module namespace as a cloned object. Static imports, named/default exports, namespace imports, and basic re-exports are resolved through `moduleLoader.resolve()` and `moduleLoader.load()`; a VM without a loader default-denies every dependency. The loader supplies source strings explicitly and VMJS never reads from the filesystem, network, dynamic `import()`, or host module cache. Cyclic module graphs currently fail with a structured `VM_RUNTIME_ERROR`.
+`capabilities.moduleLoader` is the only way ES modules can load dependencies. `evaluate(source, { sourceType: "module" })` evaluates an entry module and returns its module namespace as a cloned object. Static imports, named/default exports, namespace imports, and basic re-exports are resolved through `moduleLoader.resolve()` and `moduleLoader.load()`; a VM without a loader default-denies every dependency. The loader supplies source strings explicitly and JSVM never reads from the filesystem, network, dynamic `import()`, or host module cache. Cyclic module graphs currently fail with a structured `VM_RUNTIME_ERROR`.
 
 Global names must be normal JavaScript identifiers. Names such as `constructor`, `prototype`, `__proto__`, `fetch`, `Function`, and `AsyncFunction` are not special-cased as forbidden: if they exist inside the VM, they are VM-owned bindings or explicit host-provided capabilities, not ambient host references. Object and array globals must use enumerable data properties only; accessors and symbol properties are rejected.
 
@@ -151,7 +151,7 @@ import {
   isVMCapabilityReference,
   reconstructBoundaryValue,
   serializeBoundaryValue,
-} from "vmjs";
+} from "@catmint-fs/jsvm";
 ```
 
 Supported boundary values are primitives, arrays, plain objects, `Date`, `RegExp`, `Map`, `Set`, `ArrayBuffer`, typed arrays, `DataView`, and explicit capabilities. Cloned plain objects are reconstructed without host prototypes.
@@ -166,7 +166,7 @@ Errors use `VMError` with a `code` from `VMErrorCode` and optional `details`. Cu
 
 ## Security model
 
-VMJS is secure-by-default in the sense that a new VM exposes no ambient host globals, networking, filesystem, timers, DOM, `process`, `window`, `globalThis`, dynamic import, host `Function`, or host objects by default.
+JSVM is secure-by-default in the sense that a new VM exposes no ambient host globals, networking, filesystem, timers, DOM, `process`, `window`, `globalThis`, dynamic import, host `Function`, or host objects by default.
 
 The intended model is:
 
@@ -180,7 +180,7 @@ This implementation is still browser-compatible JavaScript running in the same J
 
 ## Supported JavaScript subset
 
-VMJS parses modern JavaScript syntax, but the interpreter intentionally supports only a small subset today. It does not claim full ECMAScript conformance.
+JSVM parses modern JavaScript syntax, but the interpreter intentionally supports only a small subset today. It does not claim full ECMAScript conformance.
 
 Currently supported guest code includes:
 
@@ -225,7 +225,7 @@ Therefore time limits are guardrails, not hard CPU guarantees. A synchronous hos
 `networkRule(host)` builds immutable, serializable network policy definitions:
 
 ```ts
-import { networkRule } from "vmjs";
+import { networkRule } from "@catmint-fs/jsvm";
 
 const rule = networkRule("example.com")
   .allow({ methods: ["GET"], paths: ["/api/*", "/home"] })
@@ -252,7 +252,7 @@ This is an early browser-compatible subset of fetch/XHR behavior, not a complete
 
 ## Snapshots
 
-`snapshot()` serializes current global bindings other than VMJS base globals and reconstructs them when restored. Snapshots are value copies, not shared state. Enumerable guest getters are invoked and stored as data values.
+`snapshot()` serializes current global bindings other than JSVM base globals and reconstructs them when restored. Snapshots are value copies, not shared state. Enumerable guest getters are invoked and stored as data values.
 
 Current limitations:
 
@@ -270,7 +270,7 @@ Bun is used for development workflows: dependency installation, tests, and packa
 
 ## ECMAScript and test262 status
 
-VMJS includes an opt-in test262 scaffold but does not claim full ECMAScript conformance. Source is parsed with Acorn and evaluated by the VMJS interpreter, so runtime support is limited to the implemented AST nodes and VM-owned built-ins listed above.
+JSVM includes an opt-in test262 scaffold but does not claim full ECMAScript conformance. Source is parsed with Acorn and evaluated by the JSVM interpreter, so runtime support is limited to the implemented AST nodes and VM-owned built-ins listed above.
 
 The scaffold does not vendor test262. Point it at a local checkout with `TEST262_DIR` or `--test262-dir`; with no filters it runs a small curated subset and reports pass/fail/unsupported results:
 

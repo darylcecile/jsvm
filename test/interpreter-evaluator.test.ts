@@ -928,7 +928,7 @@ describe("interpreter evaluator", () => {
   });
 
   test("uses a VM-owned globalThis for top-level this without touching the host global", async () => {
-    const marker = "__vmjsGuestGlobalMarker";
+    const marker = "__jsvmGuestGlobalMarker";
     const hostGlobal = globalThis as typeof globalThis & { [marker]?: unknown };
     const context = createEvaluatorContext();
     delete hostGlobal[marker];
