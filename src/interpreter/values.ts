@@ -29,6 +29,14 @@ export interface VMNativeCallable {
   readonly constructable: boolean;
 }
 
+export interface VMSymbol {
+  readonly kind: "vm-symbol";
+  readonly id: number;
+  readonly description?: string;
+  readonly registryKey?: string;
+  readonly wellKnownName?: string;
+}
+
 export interface VMNativeCallableTools {
   invokeGuestCallable(callable: unknown, args: readonly unknown[]): Promise<unknown>;
 }
@@ -55,6 +63,58 @@ interface NativeCallableRecord {
 
 const hostCallableRecords = new WeakMap<VMGuestCallable, HostCallableRecord>();
 const nativeCallableRecords = new WeakMap<VMNativeCallable, NativeCallableRecord>();
+const vmSymbolRecords = new WeakSet<VMSymbol>();
+let nextSymbolId = 1;
+
+export function createVMSymbol(
+  description?: string,
+  options: { readonly registryKey?: string; readonly wellKnownName?: string } = {},
+): VMSymbol {
+  const symbol = Object.create(null) as VMSymbol;
+
+  Object.defineProperties(symbol, {
+    kind: {
+      enumerable: true,
+      value: "vm-symbol",
+    },
+    id: {
+      enumerable: true,
+      value: nextSymbolId++,
+    },
+  });
+
+  if (description !== undefined) {
+    Object.defineProperty(symbol, "description", {
+      enumerable: true,
+      value: description,
+    });
+  }
+
+  if (options.registryKey !== undefined) {
+    Object.defineProperty(symbol, "registryKey", {
+      enumerable: true,
+      value: options.registryKey,
+    });
+  }
+
+  if (options.wellKnownName !== undefined) {
+    Object.defineProperty(symbol, "wellKnownName", {
+      enumerable: true,
+      value: options.wellKnownName,
+    });
+  }
+
+  vmSymbolRecords.add(symbol);
+  return Object.freeze(symbol);
+}
+
+export function isVMSymbol(value: unknown): value is VMSymbol {
+  return typeof value === "object" && value !== null && vmSymbolRecords.has(value as VMSymbol);
+}
+
+export function describeVMSymbol(symbol: VMSymbol): string {
+  return `Symbol(${symbol.description ?? ""})`;
+}
 
 export function createHostCallable(
   name: string,

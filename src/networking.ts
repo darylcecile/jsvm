@@ -1,4 +1,12 @@
 import { VMError, VMErrorCode, type VMSerializableValue } from "./boundary";
+import {
+  get as getVMObjectProperty,
+  getOwnPropertyDescriptor,
+  isVMObject,
+  ownKeys,
+  set as setVMObjectProperty,
+  type VMObject,
+} from "./interpreter/object-model";
 import { createNativeCallable, type VMNativeCallableTools } from "./interpreter/values";
 import type { HttpMethod, NetworkRuleDefinition, PathGlob } from "./network-rule";
 
@@ -19,7 +27,7 @@ export interface HostNetworkResponse {
   readonly bodyText: string;
 }
 
-type VMRecord = Record<string, unknown>;
+type VMRecord = Record<string, unknown> | VMObject;
 
 const DEFAULT_METHOD = "GET" satisfies HttpMethod;
 const XHR_DONE = 4;
@@ -75,10 +83,16 @@ async function performHostNetworkRequest(
 
 function createHostNetworkRequest(args: readonly unknown[]): HostNetworkRequest {
   const url = normalizeRequestUrl(args[0]);
-  const init = isPlainObject(args[1]) ? args[1] : undefined;
-  const method = normalizeRequestMethod(init?.method);
-  const headers = normalizeRequestHeaders(init?.headers);
-  const body = normalizeRequestBody(init?.body);
+  const init = isRecordObject(args[1]) ? args[1] : undefined;
+  const method = normalizeRequestMethod(
+    init === undefined ? undefined : getRecordProperty(init, "method"),
+  );
+  const headers = normalizeRequestHeaders(
+    init === undefined ? undefined : getRecordProperty(init, "headers"),
+  );
+  const body = normalizeRequestBody(
+    init === undefined ? undefined : getRecordProperty(init, "body"),
+  );
 
   return Object.freeze({
     url: url.href,
@@ -191,12 +205,12 @@ function createXMLHttpRequestInstance(rules: readonly NetworkRuleDefinition[]): 
       url = normalizeRequestUrl(nextUrl).href;
       requestHeaders = Object.create(null);
       responseHeaders.current = Object.freeze(Object.create(null) as Record<string, string>);
-      xhr.readyState = 1;
-      xhr.status = 0;
-      xhr.statusText = "";
-      xhr.responseURL = "";
-      xhr.responseText = "";
-      xhr.response = "";
+      setRecordProperty(xhr, "readyState", 1);
+      setRecordProperty(xhr, "status", 0);
+      setRecordProperty(xhr, "statusText", "");
+      setRecordProperty(xhr, "responseURL", "");
+      setRecordProperty(xhr, "responseText", "");
+      setRecordProperty(xhr, "response", "");
       return undefined;
     }),
     setRequestHeader: createNativeCallable("XMLHttpRequest.setRequestHeader", ([name, value]) => {
@@ -216,7 +230,7 @@ function createXMLHttpRequestInstance(rules: readonly NetworkRuleDefinition[]): 
       const xhr = asXHRRecord(thisValue);
 
       try {
-        xhr.readyState = 2;
+        setRecordProperty(xhr, "readyState", 2);
         await dispatchXHREvent(xhr, "readystatechange", context, tools);
         const response = await performHostNetworkRequest(
           [url, {
@@ -227,19 +241,19 @@ function createXMLHttpRequestInstance(rules: readonly NetworkRuleDefinition[]): 
           rules,
         );
         responseHeaders.current = response.headers;
-        xhr.readyState = 3;
+        setRecordProperty(xhr, "readyState", 3);
         await dispatchXHREvent(xhr, "readystatechange", context, tools);
-        xhr.readyState = XHR_DONE;
-        xhr.status = response.status;
-        xhr.statusText = response.statusText;
-        xhr.responseURL = response.url;
-        xhr.responseText = response.bodyText;
-        xhr.response = response.bodyText;
+        setRecordProperty(xhr, "readyState", XHR_DONE);
+        setRecordProperty(xhr, "status", response.status);
+        setRecordProperty(xhr, "statusText", response.statusText);
+        setRecordProperty(xhr, "responseURL", response.url);
+        setRecordProperty(xhr, "responseText", response.bodyText);
+        setRecordProperty(xhr, "response", response.bodyText);
         await dispatchXHREvent(xhr, "readystatechange", context, tools);
         await dispatchXHREvent(xhr, "load", context, tools);
         await dispatchXHREvent(xhr, "loadend", context, tools);
       } catch (error) {
-        xhr.readyState = XHR_DONE;
+        setRecordProperty(xhr, "readyState", XHR_DONE);
         await dispatchXHREvent(xhr, "readystatechange", context, tools);
         await dispatchXHREvent(xhr, "error", context, tools);
         await dispatchXHREvent(xhr, "loadend", context, tools);
@@ -257,7 +271,7 @@ async function dispatchXHREvent(
   context: unknown,
   tools: VMNativeCallableTools,
 ): Promise<void> {
-  const handler = xhr[`on${type}`];
+  const handler = getRecordProperty(xhr, `on${type}`);
 
   if (handler === null || handler === undefined) {
     return;
@@ -311,7 +325,7 @@ function normalizeRequestHeaders(value: unknown): Readonly<Record<string, string
     return Object.freeze(Object.create(null) as Record<string, string>);
   }
 
-  if (!isPlainObject(value)) {
+  if (!isRecordObject(value)) {
     throw new VMError(
       VMErrorCode.VMRuntimeError,
       "VM network request headers must be a plain object.",
@@ -321,7 +335,7 @@ function normalizeRequestHeaders(value: unknown): Readonly<Record<string, string
 
   const headers: Record<string, string> = Object.create(null);
 
-  for (const [name, headerValue] of Object.entries(value)) {
+  for (const [name, headerValue] of getRecordEntries(value)) {
     assertHeaderName(name);
     headers[name] = String(headerValue);
   }
@@ -442,7 +456,7 @@ function isHttpMethod(method: string): method is HttpMethod {
 }
 
 function asXHRRecord(value: unknown): VMRecord {
-  if (!isPlainObject(value)) {
+  if (!isRecordObject(value)) {
     throw new VMError(
       VMErrorCode.VMRuntimeError,
       "XMLHttpRequest method called with an invalid receiver.",
@@ -451,6 +465,50 @@ function asXHRRecord(value: unknown): VMRecord {
   }
 
   return value;
+}
+
+function isRecordObject(value: unknown): value is VMRecord {
+  return isPlainObject(value) || isVMObject(value);
+}
+
+function getRecordProperty(record: VMRecord, key: string): unknown {
+  return isVMObject(record) ? getVMObjectProperty(record, key) : record[key];
+}
+
+function setRecordProperty(record: VMRecord, key: string, value: unknown): void {
+  if (isVMObject(record)) {
+    if (!setVMObjectProperty(record, key, value)) {
+      throw new VMError(
+        VMErrorCode.VMRuntimeError,
+        `Unable to set XMLHttpRequest property "${key}".`,
+        { path: key, reason: "property set failed" },
+      );
+    }
+    return;
+  }
+
+  record[key] = value;
+}
+
+function getRecordEntries(record: VMRecord): [string, unknown][] {
+  if (!isVMObject(record)) {
+    return Object.entries(record);
+  }
+
+  const entries: [string, unknown][] = [];
+
+  for (const key of ownKeys(record)) {
+    if (typeof key !== "string") {
+      continue;
+    }
+
+    const descriptor = getOwnPropertyDescriptor(record, key);
+    if (descriptor?.enumerable === true) {
+      entries.push([key, getVMObjectProperty(record, key)]);
+    }
+  }
+
+  return entries;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

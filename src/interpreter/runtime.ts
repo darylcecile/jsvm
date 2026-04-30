@@ -4,6 +4,7 @@ import {
   createGlobalEnvironment,
   createLexicalEnvironment,
 } from "./environment";
+import { createOrdinaryObject, type VMObject } from "./object-model";
 
 export type VMCompletionType = "normal" | "return" | "break" | "continue" | "throw";
 
@@ -23,6 +24,8 @@ export interface VMExecutionContextOptions {
   readonly globalEnvironment?: VMEnvironment;
   readonly lexicalEnvironment?: VMEnvironment;
   readonly variableEnvironment?: VMEnvironment;
+  readonly globalObject?: VMObject;
+  readonly thisValue?: unknown;
   readonly budget?: ExecutionBudget | ExecutionBudgetOptions;
 }
 
@@ -115,14 +118,18 @@ export class ExecutionBudget {
 
 export class VMExecutionContext {
   readonly globalEnvironment: VMEnvironment;
+  readonly globalObject: VMObject;
   variableEnvironment: VMEnvironment;
   lexicalEnvironment: VMEnvironment;
+  thisValue: unknown;
   readonly budget: ExecutionBudget;
 
   constructor(options: VMExecutionContextOptions = {}) {
     this.globalEnvironment = options.globalEnvironment ?? createGlobalEnvironment();
+    this.globalObject = options.globalObject ?? createOrdinaryObject();
     this.lexicalEnvironment = options.lexicalEnvironment ?? this.globalEnvironment;
     this.variableEnvironment = options.variableEnvironment ?? this.globalEnvironment;
+    this.thisValue = options.thisValue ?? this.globalObject;
     this.budget =
       options.budget instanceof ExecutionBudget
         ? options.budget

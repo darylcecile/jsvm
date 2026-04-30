@@ -11,6 +11,30 @@ export {
   type PathGlob,
 } from "./network-rule";
 
+export {
+  createDefaultDenyModuleLoader,
+  normalizeModuleLoadRequest,
+  normalizeModuleLoader,
+  normalizeModuleResolveRequest,
+  normalizeModuleResolution,
+  normalizeModuleSource,
+  type VMModuleData,
+  type VMModuleLoadCallback,
+  type VMModuleLoadRequest,
+  type VMModuleLoadResult,
+  type VMModuleLoader,
+  type VMModuleResolveCallback,
+  type VMModuleResolveRequest,
+  type VMModuleResolveResult,
+  type VMModuleResolution,
+  type VMModuleResolutionInput,
+  type VMModuleSource,
+  type VMModuleSourceInput,
+  type VMNormalizedModuleLoader,
+} from "./module-loader";
+
+export { type VMParserSourceType } from "./parser";
+
 export * from "./boundary";
 export {
   VM,

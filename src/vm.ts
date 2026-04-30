@@ -13,10 +13,19 @@ import {
   type VMSerializedValue,
 } from "./boundary";
 import {
+  createDynamicCodeGlobals,
   createEvaluatorContext,
   evaluateProgram,
+  executeProgramForSideEffects,
   serializeGuestValueForSnapshot,
 } from "./interpreter/evaluator";
+import { createLexicalEnvironment, type VMEnvironment } from "./interpreter/environment";
+import {
+  createOrdinaryObject,
+  defineOwnProperty,
+  preventExtensions,
+  type VMObject,
+} from "./interpreter/object-model";
 import { createExecutionContext, type VMExecutionContext } from "./interpreter/runtime";
 import { createHostCallable, type VMGuestCallable } from "./interpreter/values";
 import type {
@@ -24,7 +33,14 @@ import type {
   NetworkRuleDefinition,
 } from "./network-rule";
 import { createNetworkGlobals } from "./networking";
-import { parseProgram } from "./parser";
+import {
+  normalizeModuleLoader,
+  type VMModuleResolution,
+  type VMModuleLoader,
+  type VMModuleSource,
+  type VMNormalizedModuleLoader,
+} from "./module-loader";
+import { parseProgram, type VMParserSourceType, type VMProgram } from "./parser";
 
 export interface VMExecutionRules {
   /**
@@ -46,6 +62,8 @@ export interface VMCapabilities {
   readonly executionRules?: VMExecutionRules;
   readonly numbers?: VMNumbersConfig;
   readonly networkingRules?: readonly VMNetworkRuleInput[];
+  readonly moduleLoader?: VMModuleLoader;
+  readonly dynamicCode?: boolean;
 }
 
 export type VMNetworkRuleInput = NetworkRuleDefinition | NetworkRuleBuilder;
@@ -71,6 +89,7 @@ export interface VMOptions {
 
 export interface VMEvaluateOptions {
   readonly timeLimit?: number;
+  readonly sourceType?: VMParserSourceType;
 }
 
 export interface VMSuccessResult<T = VMSerializableValue> {
@@ -95,6 +114,7 @@ export interface VMSnapshot {
       readonly executionRules?: VMExecutionRules;
       readonly numbers?: VMNumbersConfig;
       readonly networkingRules?: readonly NetworkRuleDefinition[];
+      readonly dynamicCode?: boolean;
     };
   };
   readonly state: readonly (readonly [string, VMSerializedValue])[];
@@ -107,8 +127,63 @@ interface InstalledCapability {
   readonly capability: VMCapability;
 }
 
+type ASTNode = {
+  readonly type: string;
+  readonly [key: string]: unknown;
+};
+
+type VMModuleStatus = "new" | "linking" | "linked" | "evaluating" | "evaluated";
+
+interface VMModuleRecord {
+  readonly specifier: string;
+  readonly source: string;
+  readonly program: VMProgram;
+  readonly environment: VMEnvironment;
+  readonly context: VMExecutionContext;
+  readonly dependencies: Map<string, VMModuleRecord>;
+  status: VMModuleStatus;
+  parsed?: ParsedModuleRecord;
+  exports?: Map<string, unknown>;
+  namespace?: VMObject;
+}
+
+interface ParsedModuleRecord {
+  readonly imports: readonly ModuleImportEntry[];
+  readonly localExports: readonly ModuleLocalExportEntry[];
+  readonly reExports: readonly ModuleReExportEntry[];
+  readonly exportAlls: readonly ModuleExportAllEntry[];
+  readonly evaluationProgram: VMProgram;
+  readonly dependencySpecifiers: readonly string[];
+}
+
+interface ModuleImportEntry {
+  readonly specifier: string;
+  readonly importName?: string;
+  readonly localName: string;
+  readonly namespace: boolean;
+}
+
+interface ModuleLocalExportEntry {
+  readonly exportName: string;
+  readonly localName: string;
+}
+
+interface ModuleReExportEntry {
+  readonly specifier: string;
+  readonly importName: string;
+  readonly exportName: string;
+}
+
+interface ModuleExportAllEntry {
+  readonly specifier: string;
+  readonly exportName?: string;
+}
+
+const ENTRY_MODULE_SPECIFIER = "<entry>";
+
 const SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
   "undefined",
+  "globalThis",
   "NaN",
   "Infinity",
   "Math",
@@ -119,7 +194,25 @@ const SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
   "Number",
   "String",
   "Boolean",
+  "Symbol",
   "BigInt",
+  "RegExp",
+  "Map",
+  "Set",
+  "Error",
+  "TypeError",
+  "RangeError",
+  "ReferenceError",
+  "SyntaxError",
+  "URIError",
+  "EvalError",
+  "isNaN",
+  "isFinite",
+  "Reflect",
+  "Proxy",
+  "eval",
+  "Function",
+  "AsyncFunction",
   "fetch",
   "XMLHttpRequest",
 ]);
@@ -131,8 +224,10 @@ export class VM {
   #context?: VMExecutionContext;
   #installedCapabilities: InstalledCapability[] = [];
   #networkingRules: readonly NetworkRuleDefinition[];
+  #moduleLoader: VMNormalizedModuleLoader;
   #executionRules: VMExecutionRules;
   #numbers: VMNumbersConfig;
+  #dynamicCode: boolean;
   #initialGlobals: VMGlobals;
   #restoredState?: readonly (readonly [string, VMSerializedValue])[];
 
@@ -149,6 +244,8 @@ export class VM {
     this.#networkingRules = Object.freeze(
       (options.capabilities?.networkingRules ?? []).map(normalizeNetworkRule),
     );
+    this.#moduleLoader = normalizeModuleLoader(options.capabilities?.moduleLoader);
+    this.#dynamicCode = options.capabilities?.dynamicCode === true;
     this.#initialGlobals = options.globals ?? {};
   }
 
@@ -160,6 +257,7 @@ export class VM {
         executionRules: snapshot.options.capabilities.executionRules,
         numbers: snapshot.options.capabilities.numbers,
         networkingRules: snapshot.options.capabilities.networkingRules,
+        dynamicCode: snapshot.options.capabilities.dynamicCode,
       },
     });
 
@@ -206,7 +304,7 @@ export class VM {
     this.#state = "started";
   }
 
-  snapshot(): VMSnapshot {
+  async snapshot(): Promise<VMSnapshot> {
     this.#assertUsable();
 
     if (this.#installedCapabilities.length > 0) {
@@ -232,7 +330,7 @@ export class VM {
 
         state.push([
           name,
-          serializeGuestValueForSnapshot(context.globalEnvironment.get(name)),
+          await serializeGuestValueForSnapshot(context.globalEnvironment.get(name), context),
         ] as const);
       }
     } catch (error) {
@@ -247,6 +345,7 @@ export class VM {
           executionRules: this.#executionRules,
           numbers: this.#numbers,
           networkingRules: this.#networkingRules,
+          dynamicCode: this.#dynamicCode,
         }),
       }),
       state: Object.freeze(state),
@@ -283,11 +382,19 @@ export class VM {
       const baseContext = this.#getContext();
       const evaluationContext = createExecutionContext({
         globalEnvironment: baseContext.globalEnvironment,
+        globalObject: baseContext.globalObject,
         lexicalEnvironment: baseContext.globalEnvironment,
+        thisValue: baseContext.globalObject,
         variableEnvironment: baseContext.globalEnvironment,
         budget: { timeLimitMs: timeLimit },
       });
-      const program = parseProgram(source);
+      const program = parseProgram(source, { sourceType: options.sourceType });
+
+      if (program.sourceType === "module") {
+        const value = await this.#evaluateModuleEntry(program, source, evaluationContext);
+        return success(value);
+      }
+
       const value = await evaluateProgram(program, { context: evaluationContext });
 
       return success(value);
@@ -303,12 +410,12 @@ export class VM {
 
     this.#installedCapabilities = [];
     const globals = this.#createInitialContextGlobals(includeRestoredState);
-    this.#context = createEvaluatorContext({ globals });
+    this.#context = createEvaluatorContext({ globals, dateNow: this.#numbers.dateNow });
   }
 
   #createInitialContextGlobals(includeRestoredState: boolean): Readonly<Record<string, unknown>> {
     const globals = Object.create(null) as Record<string, unknown>;
-    installBaseGlobals(globals, this.#numbers, this.#networkingRules);
+    installBaseGlobals(globals, this.#numbers, this.#networkingRules, this.#dynamicCode);
 
     for (const [name, value] of Object.entries(this.#initialGlobals)) {
       assertSafeGlobalName(name);
@@ -437,6 +544,252 @@ export class VM {
     return createHostCallable(name, capability);
   }
 
+  async #evaluateModuleEntry(
+    program: VMProgram,
+    source: string,
+    rootContext: VMExecutionContext,
+  ): Promise<VMSerializableValue> {
+    const graph = new Map<string, VMModuleRecord>();
+    const entry = this.#createModuleRecord(ENTRY_MODULE_SPECIFIER, source, program, rootContext);
+    graph.set(entry.specifier, entry);
+
+    await this.#evaluateModuleRecord(entry, graph, []);
+
+    return reconstructBoundaryValue(
+      await serializeGuestValueForSnapshot(
+        this.#getModuleNamespace(entry),
+        entry.context,
+      ),
+    );
+  }
+
+  #createModuleRecord(
+    specifier: string,
+    source: string,
+    program: VMProgram,
+    rootContext: VMExecutionContext,
+  ): VMModuleRecord {
+    const environment = createLexicalEnvironment(rootContext.globalEnvironment);
+    const context = createExecutionContext({
+      globalEnvironment: rootContext.globalEnvironment,
+      globalObject: rootContext.globalObject,
+      lexicalEnvironment: environment,
+      thisValue: undefined,
+      variableEnvironment: environment,
+      budget: rootContext.budget,
+    });
+
+    return {
+      context,
+      dependencies: new Map(),
+      environment,
+      program,
+      source,
+      specifier,
+      status: "new",
+    };
+  }
+
+  async #evaluateModuleRecord(
+    record: VMModuleRecord,
+    graph: Map<string, VMModuleRecord>,
+    stack: readonly string[],
+  ): Promise<void> {
+    if (record.status === "evaluated") {
+      return;
+    }
+
+    if (record.status === "evaluating" || record.status === "linking") {
+      throw moduleRuntimeError("Cyclic ES module graphs are not supported yet.", {
+        path: [...stack, record.specifier].join(" -> "),
+        reason: "module cycle unsupported",
+      });
+    }
+
+    if (record.status === "new") {
+      record.status = "linking";
+      record.parsed = parseModuleRecord(record.program);
+
+      for (const specifier of record.parsed.dependencySpecifiers) {
+        await this.#loadModuleDependency(record, specifier, graph);
+      }
+
+      record.status = "linked";
+    }
+
+    const parsed = record.parsed;
+    if (parsed === undefined) {
+      throw moduleRuntimeError("Module record was not linked.", {
+        path: record.specifier,
+        reason: "module link failed",
+      });
+    }
+
+    record.status = "evaluating";
+
+    try {
+      const nextStack = [...stack, record.specifier];
+      for (const specifier of parsed.dependencySpecifiers) {
+        await this.#evaluateModuleRecord(
+          getRequiredDependency(record, specifier, graph),
+          graph,
+          nextStack,
+        );
+      }
+
+      this.#installModuleImports(record, parsed, graph);
+      await executeProgramForSideEffects(parsed.evaluationProgram, {
+        context: record.context,
+      });
+      record.exports = this.#collectModuleExports(record, parsed, graph);
+      record.namespace = createModuleNamespaceObject(record.exports);
+      record.status = "evaluated";
+    } catch (error) {
+      if (record.status !== "evaluated") {
+        record.status = "linked";
+      }
+      throw error;
+    }
+  }
+
+  async #loadModuleDependency(
+    referrer: VMModuleRecord,
+    specifier: string,
+    graph: Map<string, VMModuleRecord>,
+  ): Promise<VMModuleRecord> {
+    const resolution = await this.#moduleLoader.resolve({
+      referrer: referrer.specifier,
+      specifier,
+    });
+    const existing = graph.get(resolution.specifier);
+    if (existing !== undefined) {
+      referrer.dependencies.set(specifier, existing);
+      return existing;
+    }
+
+    const source = await this.#moduleLoader.load({
+      attributes: resolution.attributes,
+      referrer: referrer.specifier,
+      specifier: resolution.specifier,
+    });
+    const record = this.#createLoadedModuleRecord(source, resolution, referrer.context, graph);
+    referrer.dependencies.set(specifier, record);
+    return record;
+  }
+
+  #createLoadedModuleRecord(
+    source: VMModuleSource,
+    resolution: VMModuleResolution,
+    rootContext: VMExecutionContext,
+    graph: Map<string, VMModuleRecord>,
+  ): VMModuleRecord {
+    if (source.specifier !== resolution.specifier) {
+      throw moduleRuntimeError("Module loader returned a source for a different specifier.", {
+        path: resolution.specifier,
+        reason: "module specifier mismatch",
+      });
+    }
+
+    const program = parseProgram(source.source, {
+      sourceFile: source.specifier,
+      sourceType: "module",
+    });
+    const record = this.#createModuleRecord(
+      source.specifier,
+      source.source,
+      program,
+      rootContext,
+    );
+    graph.set(record.specifier, record);
+    return record;
+  }
+
+  #installModuleImports(
+    record: VMModuleRecord,
+    parsed: ParsedModuleRecord,
+    graph: ReadonlyMap<string, VMModuleRecord>,
+  ): void {
+    for (const entry of parsed.imports) {
+      const dependency = getRequiredDependency(record, entry.specifier, graph);
+      const value = entry.namespace
+        ? this.#getModuleNamespace(dependency)
+        : getRequiredModuleExport(dependency, entry.importName ?? "default", record.specifier);
+
+      record.environment.define(entry.localName, {
+        deletable: false,
+        initialized: true,
+        kind: "const",
+        mutable: false,
+        value,
+      });
+    }
+  }
+
+  #collectModuleExports(
+    record: VMModuleRecord,
+    parsed: ParsedModuleRecord,
+    graph: ReadonlyMap<string, VMModuleRecord>,
+  ): Map<string, unknown> {
+    const exports = new Map<string, unknown>();
+
+    for (const entry of parsed.exportAlls) {
+      const dependency = getRequiredDependency(record, entry.specifier, graph);
+
+      if (entry.exportName !== undefined) {
+        setModuleExport(
+          exports,
+          entry.exportName,
+          this.#getModuleNamespace(dependency),
+          record.specifier,
+        );
+        continue;
+      }
+
+      for (const [exportName, value] of getModuleExports(dependency)) {
+        if (exportName !== "default" && !exports.has(exportName)) {
+          exports.set(exportName, value);
+        }
+      }
+    }
+
+    for (const entry of parsed.reExports) {
+      const dependency = getRequiredDependency(record, entry.specifier, graph);
+      setModuleExport(
+        exports,
+        entry.exportName,
+        getRequiredModuleExport(dependency, entry.importName, record.specifier),
+        record.specifier,
+      );
+    }
+
+    for (const entry of parsed.localExports) {
+      setModuleExport(
+        exports,
+        entry.exportName,
+        record.environment.get(entry.localName),
+        record.specifier,
+      );
+    }
+
+    return exports;
+  }
+
+  #getModuleNamespace(record: VMModuleRecord): VMObject {
+    if (record.namespace !== undefined) {
+      return record.namespace;
+    }
+
+    if (record.exports === undefined) {
+      throw moduleRuntimeError("Module namespace requested before evaluation completed.", {
+        path: record.specifier,
+        reason: "module namespace unavailable",
+      });
+    }
+
+    record.namespace = createModuleNamespaceObject(record.exports);
+    return record.namespace;
+  }
+
   #getContext(): VMExecutionContext {
     if (this.#context === undefined) {
       throw new VMError(
@@ -470,19 +823,16 @@ function installBaseGlobals(
   target: Record<string, unknown>,
   numbers: VMNumbersConfig,
   networkingRules: readonly NetworkRuleDefinition[],
+  dynamicCode: boolean,
 ): void {
   target.undefined = undefined;
   target.NaN = NaN;
   target.Infinity = Infinity;
   target.Math = createSafeMath(numbers.randomSeed);
-  target.Date = createSafeDate(numbers.dateNow);
   target.JSON = createSafeJSON();
-  target.Object = createSafeObject();
-  target.Array = createSafeArray();
-  target.Number = createHostCallable("Number", (value) => Number(value));
-  target.String = createHostCallable("String", (value) => String(value));
-  target.Boolean = createHostCallable("Boolean", (value) => Boolean(value));
-  target.BigInt = createHostCallable("BigInt", (value) => BigInt(String(value)));
+  if (dynamicCode) {
+    Object.assign(target, createDynamicCodeGlobals());
+  }
   Object.assign(target, createNetworkGlobals(networkingRules));
 }
 
@@ -494,19 +844,40 @@ function createSafeMath(randomSeed: string | number | undefined): object {
   for (const key of Object.getOwnPropertyNames(Math)) {
     const value = Math[key as keyof typeof Math];
     if (key === "random") {
-      safeMath.random = createHostCallable("Math.random", () => rng());
+      Object.defineProperty(safeMath, key, {
+        configurable: true,
+        enumerable: false,
+        value: createHostCallable(key, () => rng(), { id: `Math.${key}`, arity: 0 }),
+        writable: true,
+      });
     } else if (typeof value === "function") {
-      safeMath[key] = createHostCallable(`Math.${key}`, (...args) =>
-        (value as (...nextArgs: number[]) => number)(
-          ...args.map((arg) => Number(arg)),
-        ),
-      );
+      Object.defineProperty(safeMath, key, {
+        configurable: true,
+        enumerable: false,
+        value: createHostCallable(key, (...args) =>
+          (value as (...nextArgs: number[]) => number)(
+            ...args.map((arg) => Number(arg)),
+          ), { id: `Math.${key}`, arity: value.length }),
+        writable: true,
+      });
     } else {
-      safeMath[key] = value;
+      Object.defineProperty(safeMath, key, {
+        configurable: true,
+        enumerable: false,
+        value,
+        writable: false,
+      });
     }
   }
 
-  return Object.freeze(safeMath);
+  Object.defineProperty(safeMath, "constructor", {
+    configurable: true,
+    enumerable: false,
+    value: undefined,
+    writable: true,
+  });
+
+  return safeMath;
 }
 
 function createSafeDate(dateNow: number | undefined): object {
@@ -650,6 +1021,8 @@ function cloneOptions(options: VMOptions): VMOptions {
           networkingRules: options.capabilities.networkingRules
             ? Object.freeze(options.capabilities.networkingRules.map(normalizeNetworkRule))
             : undefined,
+          moduleLoader: options.capabilities.moduleLoader,
+          dynamicCode: options.capabilities.dynamicCode,
         })
       : undefined,
     globals: options.globals,
@@ -746,6 +1119,525 @@ function containsGlobalCapability(value: unknown, seen: WeakSet<object>): boolea
 function isArrayIndex(key: string): boolean {
   const index = Number(key);
   return Number.isInteger(index) && index >= 0 && index < 2 ** 32 - 1 && String(index) === key;
+}
+
+function parseModuleRecord(program: VMProgram): ParsedModuleRecord {
+  const body = getProgramBody(program);
+  const imports: ModuleImportEntry[] = [];
+  const localExports: ModuleLocalExportEntry[] = [];
+  const reExports: ModuleReExportEntry[] = [];
+  const exportAlls: ModuleExportAllEntry[] = [];
+  const evaluationBody: ASTNode[] = [];
+  const dependencies: string[] = [];
+  const explicitExportNames = new Set<string>();
+  const usedTopLevelNames = collectTopLevelModuleNames(body);
+
+  const addDependency = (specifier: string) => {
+    if (!dependencies.includes(specifier)) {
+      dependencies.push(specifier);
+    }
+  };
+  const addLocalExport = (exportName: string, localName: string) => {
+    assertUniqueExplicitExport(explicitExportNames, exportName);
+    localExports.push({ exportName, localName });
+  };
+  const addReExport = (entry: ModuleReExportEntry) => {
+    assertUniqueExplicitExport(explicitExportNames, entry.exportName);
+    reExports.push(entry);
+  };
+
+  for (const statement of body) {
+    switch (statement.type) {
+      case "ImportDeclaration": {
+        const specifier = getModuleSource(statement);
+        addDependency(specifier);
+        for (const specifierNode of getNodeArrayProperty(statement, "specifiers")) {
+          imports.push(parseImportSpecifier(specifierNode, specifier));
+        }
+        break;
+      }
+      case "ExportDefaultDeclaration": {
+        const declaration = getNodeProperty(statement, "declaration");
+        const defaultExport = transformDefaultExportDeclaration(
+          declaration,
+          usedTopLevelNames,
+        );
+        evaluationBody.push(defaultExport.statement);
+        addLocalExport("default", defaultExport.localName);
+        break;
+      }
+      case "ExportNamedDeclaration": {
+        const source = getOptionalModuleSource(statement);
+        const declaration = statement.declaration;
+
+        if (declaration !== null && declaration !== undefined) {
+          const declarationNode = asASTNode(declaration);
+          evaluationBody.push(declarationNode);
+          for (const localName of collectDeclarationBoundNames(declarationNode)) {
+            addLocalExport(localName, localName);
+          }
+          break;
+        }
+
+        if (source !== undefined) {
+          addDependency(source);
+          for (const specifierNode of getNodeArrayProperty(statement, "specifiers")) {
+            const localName = getModuleExportName(getNodeProperty(specifierNode, "local"));
+            const exportName = getModuleExportName(getNodeProperty(specifierNode, "exported"));
+            addReExport({ exportName, importName: localName, specifier: source });
+          }
+          break;
+        }
+
+        for (const specifierNode of getNodeArrayProperty(statement, "specifiers")) {
+          addLocalExport(
+            getModuleExportName(getNodeProperty(specifierNode, "exported")),
+            getModuleExportName(getNodeProperty(specifierNode, "local")),
+          );
+        }
+        break;
+      }
+      case "ExportAllDeclaration": {
+        const source = getModuleSource(statement);
+        addDependency(source);
+        const exported = statement.exported;
+        exportAlls.push({
+          exportName:
+            exported === null || exported === undefined
+              ? undefined
+              : getModuleExportName(asASTNode(exported)),
+          specifier: source,
+        });
+        if (exported !== null && exported !== undefined) {
+          assertUniqueExplicitExport(
+            explicitExportNames,
+            getModuleExportName(asASTNode(exported)),
+          );
+        }
+        break;
+      }
+      default:
+        evaluationBody.push(statement);
+        break;
+    }
+  }
+
+  return Object.freeze({
+    dependencySpecifiers: Object.freeze(dependencies),
+    evaluationProgram: {
+      ...(program as unknown as Record<string, unknown>),
+      body: evaluationBody,
+      sourceType: "script",
+    } as unknown as VMProgram,
+    exportAlls: Object.freeze(exportAlls),
+    imports: Object.freeze(imports),
+    localExports: Object.freeze(localExports),
+    reExports: Object.freeze(reExports),
+  });
+}
+
+function parseImportSpecifier(specifierNode: ASTNode, specifier: string): ModuleImportEntry {
+  const localName = getIdentifierName(getNodeProperty(specifierNode, "local"));
+  assertSafeGlobalName(localName);
+
+  if (specifierNode.type === "ImportNamespaceSpecifier") {
+    return { localName, namespace: true, specifier };
+  }
+
+  if (specifierNode.type === "ImportDefaultSpecifier") {
+    return { importName: "default", localName, namespace: false, specifier };
+  }
+
+  if (specifierNode.type === "ImportSpecifier") {
+    return {
+      importName: getModuleExportName(getNodeProperty(specifierNode, "imported")),
+      localName,
+      namespace: false,
+      specifier,
+    };
+  }
+
+  throw moduleRuntimeError("Unsupported import specifier.", {
+    path: specifierNode.type,
+    reason: "unsupported module syntax",
+  });
+}
+
+function transformDefaultExportDeclaration(
+  declaration: ASTNode,
+  usedTopLevelNames: Set<string>,
+): { readonly localName: string; readonly statement: ASTNode } {
+  if (
+    (declaration.type === "FunctionDeclaration" ||
+      declaration.type === "ClassDeclaration") &&
+    declaration.id !== null &&
+    declaration.id !== undefined
+  ) {
+    return {
+      localName: getIdentifierName(asASTNode(declaration.id)),
+      statement: declaration,
+    };
+  }
+
+  const localName = allocateModuleTemporaryName(usedTopLevelNames);
+  const init =
+    declaration.type === "FunctionDeclaration"
+      ? ({ ...declaration, type: "FunctionExpression" } as ASTNode)
+      : declaration.type === "ClassDeclaration"
+        ? ({ ...declaration, type: "ClassExpression" } as ASTNode)
+        : declaration;
+
+  return {
+    localName,
+    statement: {
+      declarations: [
+        {
+          id: { name: localName, type: "Identifier" },
+          init,
+          type: "VariableDeclarator",
+        },
+      ],
+      kind: "const",
+      type: "VariableDeclaration",
+    },
+  };
+}
+
+function collectTopLevelModuleNames(body: readonly ASTNode[]): Set<string> {
+  const names = new Set<string>();
+
+  for (const statement of body) {
+    if (statement.type === "ImportDeclaration") {
+      for (const specifierNode of getNodeArrayProperty(statement, "specifiers")) {
+        names.add(getIdentifierName(getNodeProperty(specifierNode, "local")));
+      }
+      continue;
+    }
+
+    if (
+      statement.type === "ExportNamedDeclaration" &&
+      statement.declaration !== null &&
+      statement.declaration !== undefined
+    ) {
+      for (const name of collectDeclarationBoundNames(asASTNode(statement.declaration))) {
+        names.add(name);
+      }
+      continue;
+    }
+
+    if (statement.type === "ExportDefaultDeclaration") {
+      const declaration = getNodeProperty(statement, "declaration");
+      if (
+        (declaration.type === "FunctionDeclaration" ||
+          declaration.type === "ClassDeclaration") &&
+        declaration.id !== null &&
+        declaration.id !== undefined
+      ) {
+        names.add(getIdentifierName(asASTNode(declaration.id)));
+      }
+      continue;
+    }
+
+    for (const name of collectDeclarationBoundNames(statement)) {
+      names.add(name);
+    }
+  }
+
+  return names;
+}
+
+function collectDeclarationBoundNames(declaration: ASTNode): readonly string[] {
+  switch (declaration.type) {
+    case "VariableDeclaration":
+      return getNodeArrayProperty(declaration, "declarations").flatMap((declarator) =>
+        collectPatternBoundNames(getNodeProperty(declarator, "id"))
+      );
+    case "FunctionDeclaration":
+    case "ClassDeclaration":
+      return declaration.id === null || declaration.id === undefined
+        ? []
+        : [getIdentifierName(asASTNode(declaration.id))];
+    default:
+      return [];
+  }
+}
+
+function collectPatternBoundNames(pattern: ASTNode): readonly string[] {
+  switch (pattern.type) {
+    case "Identifier":
+      return [getIdentifierName(pattern)];
+    case "RestElement":
+      return collectPatternBoundNames(getNodeProperty(pattern, "argument"));
+    case "AssignmentPattern":
+      return collectPatternBoundNames(getNodeProperty(pattern, "left"));
+    case "ArrayPattern":
+      return getUnknownArrayProperty(pattern, "elements").flatMap((element) =>
+        element === null ? [] : collectPatternBoundNames(asASTNode(element))
+      );
+    case "ObjectPattern":
+      return getNodeArrayProperty(pattern, "properties").flatMap((property) => {
+        if (property.type === "RestElement") {
+          return collectPatternBoundNames(getNodeProperty(property, "argument"));
+        }
+        return collectPatternBoundNames(getNodeProperty(property, "value"));
+      });
+    default:
+      return [];
+  }
+}
+
+function allocateModuleTemporaryName(usedTopLevelNames: Set<string>): string {
+  let index = 0;
+  let name = "__vmjs_module_default__";
+
+  while (usedTopLevelNames.has(name)) {
+    index += 1;
+    name = `__vmjs_module_default_${index}__`;
+  }
+
+  usedTopLevelNames.add(name);
+  return name;
+}
+
+function getProgramBody(program: VMProgram): readonly ASTNode[] {
+  const body = (program as unknown as { readonly body?: unknown }).body;
+
+  if (!Array.isArray(body)) {
+    throw moduleRuntimeError("Module program must contain a body.", {
+      reason: "invalid ast",
+    });
+  }
+
+  return body.map(asASTNode);
+}
+
+function getRequiredDependency(
+  record: VMModuleRecord,
+  specifier: string,
+  _graph: ReadonlyMap<string, VMModuleRecord>,
+): VMModuleRecord {
+  const dependency = record.dependencies.get(specifier);
+  if (dependency === undefined) {
+    throw moduleRuntimeError("Module dependency was not loaded.", {
+      path: specifier,
+      reason: "module dependency missing",
+    });
+  }
+  return dependency;
+}
+
+function getModuleExports(record: VMModuleRecord): ReadonlyMap<string, unknown> {
+  if (record.exports === undefined) {
+    throw moduleRuntimeError("Module exports requested before evaluation completed.", {
+      path: record.specifier,
+      reason: "module exports unavailable",
+    });
+  }
+
+  return record.exports;
+}
+
+function getRequiredModuleExport(
+  record: VMModuleRecord,
+  exportName: string,
+  referrer: string,
+): unknown {
+  const exports = getModuleExports(record);
+
+  if (!exports.has(exportName)) {
+    throw moduleRuntimeError(`Module "${record.specifier}" does not export "${exportName}".`, {
+      path: exportName,
+      reason: "missing module export",
+      referrer,
+    });
+  }
+
+  return exports.get(exportName);
+}
+
+function setModuleExport(
+  exports: Map<string, unknown>,
+  exportName: string,
+  value: unknown,
+  specifier: string,
+): void {
+  if (exports.has(exportName)) {
+    throw moduleRuntimeError(`Duplicate module export "${exportName}".`, {
+      path: exportName,
+      reason: "duplicate module export",
+      referrer: specifier,
+    });
+  }
+
+  exports.set(exportName, value);
+}
+
+function createModuleNamespaceObject(exports: ReadonlyMap<string, unknown>): VMObject {
+  const namespace = createOrdinaryObject(null);
+
+  for (const [name, value] of [...exports.entries()].sort(([left], [right]) =>
+    left.localeCompare(right)
+  )) {
+    const defined = defineOwnProperty(namespace, name, {
+      configurable: false,
+      enumerable: true,
+      kind: "data",
+      value,
+      writable: false,
+    });
+
+    if (!defined) {
+      throw moduleRuntimeError("Unable to define module namespace export.", {
+        path: name,
+        reason: "property definition failed",
+      });
+    }
+  }
+
+  preventExtensions(namespace);
+  return namespace;
+}
+
+function assertUniqueExplicitExport(
+  seen: Set<string>,
+  exportName: string,
+): void {
+  if (seen.has(exportName)) {
+    throw moduleRuntimeError(`Duplicate module export "${exportName}".`, {
+      path: exportName,
+      reason: "duplicate module export",
+    });
+  }
+
+  seen.add(exportName);
+}
+
+function getModuleSource(statement: ASTNode): string {
+  const source = getOptionalModuleSource(statement);
+
+  if (source === undefined) {
+    throw moduleRuntimeError("Module statement is missing a source specifier.", {
+      path: statement.type,
+      reason: "invalid module source",
+    });
+  }
+
+  return source;
+}
+
+function getOptionalModuleSource(statement: ASTNode): string | undefined {
+  const source = statement.source;
+  if (source === null || source === undefined) {
+    return undefined;
+  }
+
+  const sourceNode = asASTNode(source);
+  const value = sourceNode.value;
+  if (typeof value !== "string") {
+    throw moduleRuntimeError("Module source specifiers must be string literals.", {
+      path: statement.type,
+      reason: "invalid module source",
+    });
+  }
+
+  return value;
+}
+
+function getModuleExportName(node: ASTNode): string {
+  if (node.type === "Identifier") {
+    return getIdentifierName(node);
+  }
+
+  if (node.type === "Literal" && typeof node.value === "string") {
+    return node.value;
+  }
+
+  throw moduleRuntimeError("Module export names must be identifiers or string literals.", {
+    path: node.type,
+    reason: "invalid module export name",
+  });
+}
+
+function getIdentifierName(node: ASTNode): string {
+  if (node.type !== "Identifier" || typeof node.name !== "string") {
+    throw moduleRuntimeError("Expected an identifier.", {
+      path: node.type,
+      reason: "invalid ast",
+    });
+  }
+
+  return node.name;
+}
+
+function getNodeProperty(node: ASTNode, key: string): ASTNode {
+  return asASTNode(node[key]);
+}
+
+function getNodeArrayProperty(node: ASTNode, key: string): ASTNode[] {
+  return getUnknownArrayProperty(node, key).map(asASTNode);
+}
+
+function getUnknownArrayProperty(node: ASTNode, key: string): unknown[] {
+  const value = node[key];
+  if (!Array.isArray(value)) {
+    throw moduleRuntimeError("Expected an AST node array.", {
+      path: `${node.type}.${key}`,
+      reason: "invalid ast",
+    });
+  }
+
+  return value;
+}
+
+function asASTNode(value: unknown): ASTNode {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    typeof (value as { readonly type?: unknown }).type !== "string"
+  ) {
+    throw moduleRuntimeError("Expected an AST node.", {
+      reason: "invalid ast",
+    });
+  }
+
+  return value as ASTNode;
+}
+
+function moduleRuntimeError(
+  message: string,
+  details: Record<string, string | undefined> = {},
+): VMError {
+  return new VMError(VMErrorCode.VMRuntimeError, message, details);
+}
+
+type StaticModuleStatement = {
+  readonly type: string;
+  readonly source?: {
+    readonly value?: unknown;
+  } | null;
+};
+
+function collectStaticModuleSpecifiers(program: VMProgram): readonly string[] {
+  const body = (program as unknown as { readonly body?: readonly StaticModuleStatement[] }).body;
+
+  if (!Array.isArray(body)) {
+    return [];
+  }
+
+  const specifiers: string[] = [];
+
+  for (const statement of body) {
+    if (
+      (statement.type === "ImportDeclaration" ||
+        statement.type === "ExportNamedDeclaration" ||
+        statement.type === "ExportAllDeclaration") &&
+      typeof statement.source?.value === "string"
+    ) {
+      specifiers.push(statement.source.value);
+    }
+  }
+
+  return specifiers;
 }
 
 function snapshotUnsupportedError(error: unknown): VMError {
