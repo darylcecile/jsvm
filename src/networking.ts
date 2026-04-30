@@ -43,7 +43,7 @@ export function createNetworkGlobals(
   });
 }
 
-async function performHostNetworkRequest(
+export async function performHostNetworkRequest(
   args: readonly unknown[],
   rules: readonly NetworkRuleDefinition[],
 ): Promise<HostNetworkResponse> {

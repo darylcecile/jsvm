@@ -272,6 +272,70 @@ describe("module loader", () => {
     }
   });
 
+  test("VM imports modules as opaque host RPC handles", async () => {
+    const loads: string[] = [];
+    const moduleLoader = normalizeModuleLoader({
+      resolve: ({ specifier }) => specifier,
+      load: ({ specifier }) => {
+        loads.push(specifier);
+        return `
+          export const value = 3;
+          export function add(a, b) {
+            return { sum: a + b + value };
+          }
+          export function fail() {
+            throw 'boom';
+          }
+        `;
+      },
+    });
+    const vm = new VM({ capabilities: { moduleLoader } });
+    await vm.start();
+
+    const imported = await vm.import("math");
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      throw new Error("Expected module handle.");
+    }
+
+    expect(imported.value.specifier).toBe("math");
+    expect(imported.value.exports()).toEqual(["add", "fail", "value"]);
+    expect(await imported.value.get("value")).toEqual({ ok: true, value: 3 });
+    expect(await imported.value.call("add", 2, 4)).toEqual({
+      ok: true,
+      value: { sum: 9 },
+    });
+
+    const add = imported.value.getFunction("add");
+    expect(add.ok).toBe(true);
+    if (!add.ok) {
+      throw new Error("Expected function export handle.");
+    }
+    expect(await add.value.call(1, 2)).toEqual({
+      ok: true,
+      value: { sum: 6 },
+    });
+
+    expect(imported.value.getFunction("value").ok).toBe(false);
+    const failed = await imported.value.call("fail");
+    expect(failed.ok).toBe(false);
+    if (!failed.ok) {
+      expect(failed.error.code).toBe(VMErrorCode.VMRuntimeError);
+    }
+
+    const importedAgain = await vm.import("math");
+    expect(importedAgain.ok).toBe(true);
+    expect(loads).toEqual(["math"]);
+
+    vm.reset();
+    const stale = await add.value.call(1, 2);
+    expect(stale.ok).toBe(false);
+    if (!stale.ok) {
+      expect(stale.error.code).toBe(VMErrorCode.VMRuntimeError);
+      expect(stale.error.details.reason).toBe("stale handle");
+    }
+  });
+
   test("VM keeps module locals isolated from the global scope", async () => {
     const vm = new VM();
     await vm.start();

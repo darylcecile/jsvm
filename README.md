@@ -53,22 +53,27 @@ const vm = new VM({
 
 await vm.start(); // required step that initializes the VM.
 
-const resultA = await vm.eval("log('hello from the guest'); 1 + 2");
-const resultB = await vm.evalFile("/path/to/script.js");
-const resultC = await vm.evalRemote("https://example.com/script.js");
+const resultA = await vm.eval("console.log('hello from the guest'); 1 + 2");
+const resultB = await vm.dangerously.evaluateUrl("https://example.com/script.js", {
+	maxBytes: 100_000,
+});
 
-const resultD = await vm.dangerously.import("https://example.com/module.js"); // returns whatever the module exports after evaluating it in the VM
+const moduleResult = await vm.import("app:main"); // resolves and loads through capabilities.moduleLoader
 
-const snapshot = vm.snapshot();
+const snapshot = await vm.snapshot();
 // ... later ...
 const vm2 = VM.fromSnapshot(snapshot);
 
 // interfacing
-const module = await vm.import("https://example.com/module.js"); // returns a wrapped module namespace object with only the exported values, no access to host globals or intrinsics - any calls into the module are proxied through the VM boundary and results are reconstructed safely after serialization of values
-const out = await module.someFunction("hello"); // calls someFunction in the VM, passing "hello" as an argument, and returns a reconstructed result in the host with serialized values crossing the boundary safely
+if (moduleResult.ok) {
+	const out = await moduleResult.value.call("someFunction", "hello"); // calls an exported VM function through an opaque RPC handle
+}
 
 // global extraction
-const guestGlobalMain = await vm.getGlobalFunction("main"); // retrieves a global function named "main" from the VM, returning a wrapped function that can be called from the host - when called, it executes the guest's main function in the VM and returns a reconstructed result in the host, with arguments and return values safely crossing the boundary through serialization and wrapping to prevent access to host objects or intrinsics
+const guestGlobalMain = vm.getGlobalFunction("main"); // returns an opaque handle for a VM global function
+if (guestGlobalMain.ok) {
+	const out = await guestGlobalMain.value.call("hello");
+}
 
 // wait for microtasks to complete in the VM (e.g. pending promises) - this would be necessary to ensure that all guest code has finished executing before, for example, taking a snapshot or disposing the VM, since the VM's event loop and microtask queue would be managed internally and not directly observable from the host
 await vm.idle();
@@ -103,6 +108,9 @@ const vm = new VM(options?: VMOptions);
 await vm.start();
 const result = await vm.eval(source, options?);
 const sameResult = await vm.evaluate(source, options?);
+const functionHandle = vm.getGlobalFunction("main");
+const moduleHandle = await vm.import("specifier");
+const remoteResult = await vm.dangerously.evaluateUrl("https://example.com/script.js");
 await vm.idle();
 const snapshot = await vm.snapshot();
 vm.reset();
@@ -115,6 +123,9 @@ Lifecycle:
 - `new VM()` creates an unstarted VM. Call `await vm.start()` before evaluation, snapshots, or `idle()`.
 - `start()` initializes the VM scope. Calling it more than once is a no-op unless the VM was disposed.
 - `eval(source, options?)` is an alias for `evaluate(source, options?)`.
+- `getGlobalFunction(name)` returns a structured result containing an opaque host-side handle for a callable VM global.
+- `import(specifier, options?)` resolves and evaluates through `capabilities.moduleLoader`, then returns a structured result containing an opaque module handle.
+- `dangerously.evaluateUrl(url, options?)` fetches a script with the VM network rules and evaluates it through the interpreter. `dangerously.eval(url, options?)` is an alias for URL evaluation, not host `eval`.
 - `idle()` waits for a small number of microtask turns. It is a convenience for currently pending promises, not a full event-loop implementation.
 - `reset()` discards current guest globals and reinstalls the initial globals/options. The VM remains started.
 - `snapshot()` resolves to serializable guest state and selected options. It fails if the VM contains host capabilities/callable globals.
@@ -163,6 +174,40 @@ type VMResult<T = VMSerializableValue> =
 Returned values are cloned across the boundary. Enumerable guest accessors are invoked and exported as data values; host object identity, prototypes, accessors, symbols, functions, promises, weak collections, and cycles do not cross as ordinary values.
 
 VM lifecycle misuse can still throw or reject directly, for example using a VM before `start()` or after `dispose()`.
+
+### Host RPC handles
+
+Guest functions do not cross the host boundary as ordinary values. Use explicit handle APIs when the host needs to call into the VM:
+
+```ts
+const main = vm.getGlobalFunction("main");
+if (main.ok) {
+  const result = await main.value.call({ input: "hello" });
+}
+
+const moduleResult = await vm.import("plugin:entry");
+if (moduleResult.ok) {
+  const module = moduleResult.value;
+  const names = module.exports();
+  const config = await module.get("config");
+  const transformed = await module.call("transform", { text: "hello" });
+}
+```
+
+Handle calls serialize host arguments into the guest realm and serialize return values back out. Handles are intentionally opaque and are invalidated when the VM is reset or disposed. Module imports use only the configured `moduleLoader`; JSVM does not use host dynamic import or ambient module resolution.
+
+### Dangerous URL evaluation
+
+`vm.dangerously.evaluateUrl(url, options?)` is an explicit escape hatch for loading source text from a URL and running it in the VM:
+
+```ts
+const result = await vm.dangerously.evaluateUrl("https://cdn.example.com/plugin.js", {
+  sourceType: "script",
+  maxBytes: 100_000,
+});
+```
+
+The URL load is still mediated by `networkingRules`, uses `GET`, applies rule-injected headers, and evaluates through the interpreter. It does not bypass the VM boundary and does not use host `eval`, but it is dangerous because the host is choosing to run remote code.
 
 ### Capabilities and boundary helpers
 

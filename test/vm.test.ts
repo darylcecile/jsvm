@@ -9,7 +9,7 @@ import {
   type VMResult,
 } from "../src/index";
 
-function expectVMFailure(result: VMResult, code: VMErrorCode): VMError {
+function expectVMFailure(result: VMResult<unknown>, code: VMErrorCode): VMError {
   expect(result.ok).toBe(false);
   if (result.ok) {
     throw new Error(`Expected VM failure ${code}, got success.`);
@@ -697,6 +697,71 @@ describe("VM", () => {
     expectVMFailure(await vm.eval("leakFunction()"), VMErrorCode.BoundaryUnsupportedType);
   });
 
+  test("invokes VM global functions through opaque host handles", async () => {
+    const vm = new VM();
+    await vm.start();
+
+    await vm.eval(`
+      function add(a, b) {
+        return { sum: a + b, nested: { fromGuest: true } };
+      }
+      function fail() {
+        throw 'boom';
+      }
+      const notCallable = 1;
+    `);
+
+    const add = vm.getGlobalFunction("add");
+    expect(add.ok).toBe(true);
+    if (!add.ok) {
+      throw new Error("Expected global function handle.");
+    }
+
+    const firstCall = await add.value.call(2, 3);
+    expect(firstCall).toEqual({
+      ok: true,
+      value: {
+        sum: 5,
+        nested: { fromGuest: true },
+      },
+    });
+    if (firstCall.ok) {
+      (firstCall.value as { nested: { fromGuest: boolean } }).nested.fromGuest = false;
+    }
+    expect(await add.value.call(1, 1)).toEqual({
+      ok: true,
+      value: {
+        sum: 2,
+        nested: { fromGuest: true },
+      },
+    });
+
+    const fail = vm.getGlobalFunction("fail");
+    expect(fail.ok).toBe(true);
+    if (!fail.ok) {
+      throw new Error("Expected failing global function handle.");
+    }
+    expectVMFailure(await fail.value.call(), VMErrorCode.VMRuntimeError);
+    expectVMFailure(vm.getGlobalFunction("notCallable"), VMErrorCode.VMRuntimeError);
+
+    vm.reset();
+    expectVMFailure(await add.value.call(1, 2), VMErrorCode.VMRuntimeError);
+
+    const limited = new VM({
+      capabilities: {
+        executionRules: { timeLimit: 1 },
+      },
+    });
+    await limited.start();
+    await limited.eval("function spin() { while (true) {} }");
+    const spin = limited.getGlobalFunction("spin");
+    expect(spin.ok).toBe(true);
+    if (!spin.ok) {
+      throw new Error("Expected timeout test function handle.");
+    }
+    expectVMFailure(await spin.value.call(), VMErrorCode.VMTimeoutError);
+  });
+
   test("uses deterministic number controls", async () => {
     const vmA = new VM({
       capabilities: {
@@ -1016,6 +1081,62 @@ describe("VM", () => {
       );
       expectVMFailure(
         await vm.eval("fetch('https://example.com/api/data', { method: 'POST' })"),
+        VMErrorCode.VMSecurityError,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("dangerously evaluates URL scripts through network rules", async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: { url: string; method: string; headers: Record<string, string> }[] = [];
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        headers: { ...(init?.headers as Record<string, string> | undefined) },
+      });
+
+      return new Response("remoteValue = 40; remoteValue + 2;", {
+        status: 200,
+        headers: { "Content-Type": "text/javascript" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const vm = new VM({
+        capabilities: {
+          networkingRules: [
+            networkRule("cdn.example.com")
+              .allow({ methods: ["GET"], paths: ["/allowed.js"] })
+              .setHeaders({ "X-VM": "yes" }),
+          ],
+        },
+      });
+      await vm.start();
+
+      expect(await vm.dangerously.evaluateUrl("https://cdn.example.com/allowed.js")).toEqual({
+        ok: true,
+        value: 42,
+      });
+      expect(requests).toEqual([
+        {
+          url: "https://cdn.example.com/allowed.js",
+          method: "GET",
+          headers: { "X-VM": "yes" },
+        },
+      ]);
+
+      expectVMFailure(
+        await vm.dangerously.eval("https://cdn.example.com/blocked.js"),
+        VMErrorCode.VMSecurityError,
+      );
+      expectVMFailure(
+        await vm.dangerously.evaluateUrl("https://cdn.example.com/allowed.js", {
+          maxBytes: 4,
+        }),
         VMErrorCode.VMSecurityError,
       );
     } finally {

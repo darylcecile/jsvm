@@ -16,7 +16,10 @@ import {
   createDynamicCodeGlobals,
   createEvaluatorContext,
   evaluateProgram,
+  exportGuestValueForHost,
   executeProgramForSideEffects,
+  invokeGuestCallableForHost,
+  isGuestCallableValue,
   serializeGuestValueForSnapshot,
 } from "./interpreter/evaluator";
 import { createLexicalEnvironment, type VMEnvironment } from "./interpreter/environment";
@@ -32,7 +35,7 @@ import type {
   NetworkRuleBuilder,
   NetworkRuleDefinition,
 } from "./network-rule";
-import { createNetworkGlobals } from "./networking";
+import { createNetworkGlobals, performHostNetworkRequest } from "./networking";
 import {
   normalizeModuleLoader,
   type VMModuleResolution,
@@ -90,6 +93,38 @@ export interface VMOptions {
 export interface VMEvaluateOptions {
   readonly timeLimit?: number;
   readonly sourceType?: VMParserSourceType;
+}
+
+export interface VMImportOptions {
+  readonly timeLimit?: number;
+}
+
+export interface VMDangerousEvaluateUrlOptions extends VMEvaluateOptions {
+  readonly maxBytes?: number;
+}
+
+export interface VMDangerousAPI {
+  readonly evaluateUrl: (
+    url: string | URL,
+    options?: VMDangerousEvaluateUrlOptions,
+  ) => Promise<VMResult>;
+  readonly eval: (
+    url: string | URL,
+    options?: VMDangerousEvaluateUrlOptions,
+  ) => Promise<VMResult>;
+}
+
+export interface VMFunctionHandle {
+  readonly name: string;
+  call(...args: VMSerializableValue[]): Promise<VMResult>;
+}
+
+export interface VMModuleHandle {
+  readonly specifier: string;
+  exports(): readonly string[];
+  get(name: string): Promise<VMResult>;
+  getFunction(name: string): VMResult<VMFunctionHandle>;
+  call(name: string, ...args: VMSerializableValue[]): Promise<VMResult>;
 }
 
 export interface VMSuccessResult<T = VMSerializableValue> {
@@ -217,8 +252,113 @@ const SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
   "XMLHttpRequest",
 ]);
 
+class VMFunctionHandleImpl implements VMFunctionHandle {
+  readonly name: string;
+
+  readonly #callable: unknown;
+  readonly #getContext: () => VMExecutionContext;
+  readonly #thisValue?: unknown;
+
+  constructor(
+    name: string,
+    callable: unknown,
+    getContext: () => VMExecutionContext,
+    thisValue?: unknown,
+  ) {
+    this.name = name;
+    this.#callable = callable;
+    this.#getContext = getContext;
+    this.#thisValue = thisValue;
+  }
+
+  async call(...args: VMSerializableValue[]): Promise<VMResult> {
+    try {
+      const context = this.#getContext();
+      return success(
+        await invokeGuestCallableForHost(
+          this.#callable,
+          args,
+          context,
+          this.#thisValue,
+        ),
+      );
+    } catch (error) {
+      return failure(toVMError(error));
+    }
+  }
+}
+
+class VMModuleHandleImpl implements VMModuleHandle {
+  readonly specifier: string;
+
+  readonly #exportNames: readonly string[];
+  readonly #getContext: () => VMExecutionContext;
+  readonly #getExportValue: (name: string) => unknown;
+  readonly #createFunctionHandle: (name: string, value: unknown) => VMFunctionHandle;
+
+  constructor(
+    specifier: string,
+    exportNames: readonly string[],
+    getContext: () => VMExecutionContext,
+    getExportValue: (name: string) => unknown,
+    createFunctionHandle: (name: string, value: unknown) => VMFunctionHandle,
+  ) {
+    this.specifier = specifier;
+    this.#exportNames = Object.freeze([...exportNames]);
+    this.#getContext = getContext;
+    this.#getExportValue = getExportValue;
+    this.#createFunctionHandle = createFunctionHandle;
+  }
+
+  exports(): readonly string[] {
+    return this.#exportNames;
+  }
+
+  async get(name: string): Promise<VMResult> {
+    try {
+      const context = this.#getContext();
+      return success(
+        await exportGuestValueForHost(this.#getExportValue(name), context),
+      );
+    } catch (error) {
+      return failure(toVMError(error));
+    }
+  }
+
+  getFunction(name: string): VMResult<VMFunctionHandle> {
+    try {
+      this.#getContext();
+      const value = this.#getExportValue(name);
+      if (!isGuestCallableValue(value)) {
+        return failure(
+          new VMError(
+            VMErrorCode.VMRuntimeError,
+            `Module export "${name}" is not callable.`,
+            { path: name, reason: "not callable" },
+          ),
+        );
+      }
+
+      return success(this.#createFunctionHandle(name, value));
+    } catch (error) {
+      return failure(toVMError(error));
+    }
+  }
+
+  async call(name: string, ...args: VMSerializableValue[]): Promise<VMResult> {
+    const handle = this.getFunction(name);
+    if (!handle.ok) {
+      return handle;
+    }
+
+    return handle.value.call(...args);
+  }
+}
+
 export class VM {
   readonly options: VMOptions;
+  readonly dangerously: VMDangerousAPI;
+  readonly import: (specifier: string, options?: VMImportOptions) => Promise<VMResult<VMModuleHandle>>;
 
   #state: VMState = "created";
   #context?: VMExecutionContext;
@@ -230,6 +370,8 @@ export class VM {
   #dynamicCode: boolean;
   #initialGlobals: VMGlobals;
   #restoredState?: readonly (readonly [string, VMSerializedValue])[];
+  #generation = 0;
+  #moduleGraph = new Map<string, VMModuleRecord>();
 
   constructor(options: VMOptions = {}) {
     this.options = cloneOptions(options);
@@ -247,6 +389,14 @@ export class VM {
     this.#moduleLoader = normalizeModuleLoader(options.capabilities?.moduleLoader);
     this.#dynamicCode = options.capabilities?.dynamicCode === true;
     this.#initialGlobals = options.globals ?? {};
+    this.import = (specifier, importOptions = {}) =>
+      this.#importModule(specifier, importOptions);
+    this.dangerously = Object.freeze({
+      evaluateUrl: (url: string | URL, evaluateOptions = {}) =>
+        this.#evaluateUrl(url, evaluateOptions),
+      eval: (url: string | URL, evaluateOptions = {}) =>
+        this.#evaluateUrl(url, evaluateOptions),
+    });
   }
 
   static fromSnapshot(snapshot: VMSnapshot): VM {
@@ -289,6 +439,8 @@ export class VM {
 
     this.#installedCapabilities = [];
     this.#context = undefined;
+    this.#moduleGraph = new Map();
+    this.#generation += 1;
     this.#state = "disposed";
   }
 
@@ -352,6 +504,38 @@ export class VM {
     });
   }
 
+  getGlobalFunction(name: string): VMResult<VMFunctionHandle> {
+    try {
+      this.#assertUsable();
+
+      if (typeof name !== "string" || name.length === 0) {
+        return failure(
+          new VMError(
+            VMErrorCode.VMRuntimeError,
+            "Global function name must be a non-empty string.",
+            { path: "name", reason: "invalid global function name" },
+          ),
+        );
+      }
+
+      const context = this.#getContext();
+      const value = context.globalEnvironment.get(name);
+      if (!isGuestCallableValue(value)) {
+        return failure(
+          new VMError(
+            VMErrorCode.VMRuntimeError,
+            `Global "${name}" is not callable.`,
+            { path: name, reason: "not callable" },
+          ),
+        );
+      }
+
+      return success(this.#createFunctionHandle(name, value, this.#generation));
+    } catch (error) {
+      return failure(toVMError(error));
+    }
+  }
+
   async eval(
     source: string,
     options: VMEvaluateOptions = {},
@@ -379,15 +563,7 @@ export class VM {
       const timeLimit = normalizeTimeLimit(
         options.timeLimit ?? this.#executionRules.timeLimit,
       );
-      const baseContext = this.#getContext();
-      const evaluationContext = createExecutionContext({
-        globalEnvironment: baseContext.globalEnvironment,
-        globalObject: baseContext.globalObject,
-        lexicalEnvironment: baseContext.globalEnvironment,
-        thisValue: baseContext.globalObject,
-        variableEnvironment: baseContext.globalEnvironment,
-        budget: { timeLimitMs: timeLimit },
-      });
+      const evaluationContext = this.#createEvaluationContext(timeLimit);
       const program = parseProgram(source, { sourceType: options.sourceType });
 
       if (program.sourceType === "module") {
@@ -409,8 +585,10 @@ export class VM {
     }
 
     this.#installedCapabilities = [];
+    this.#moduleGraph = new Map();
     const globals = this.#createInitialContextGlobals(includeRestoredState);
     this.#context = createEvaluatorContext({ globals, dateNow: this.#numbers.dateNow });
+    this.#generation += 1;
   }
 
   #createInitialContextGlobals(includeRestoredState: boolean): Readonly<Record<string, unknown>> {
@@ -560,6 +738,101 @@ export class VM {
         this.#getModuleNamespace(entry),
         entry.context,
       ),
+    );
+  }
+
+  async #importModule(
+    specifier: string,
+    options: VMImportOptions,
+  ): Promise<VMResult<VMModuleHandle>> {
+    try {
+      this.#assertUsable();
+
+      if (typeof specifier !== "string" || specifier.length === 0) {
+        return failure(
+          new VMError(
+            VMErrorCode.VMRuntimeError,
+            "Module specifier must be a non-empty string.",
+            { path: "specifier", reason: "invalid module specifier" },
+          ),
+        );
+      }
+
+      const timeLimit = normalizeTimeLimit(
+        options.timeLimit ?? this.#executionRules.timeLimit,
+      );
+      const rootContext = this.#createEvaluationContext(timeLimit);
+      const record = await this.#loadRootModule(specifier, rootContext);
+      await this.#evaluateModuleRecord(record, this.#moduleGraph, []);
+
+      return success(this.#createModuleHandle(record, this.#generation));
+    } catch (error) {
+      return failure(toVMError(error));
+    }
+  }
+
+  async #evaluateUrl(
+    url: string | URL,
+    options: VMDangerousEvaluateUrlOptions,
+  ): Promise<VMResult> {
+    try {
+      this.#assertUsable();
+
+      const href = normalizeEvaluateUrl(url);
+      const maxBytes = normalizeMaxBytes(options.maxBytes);
+      const response = await performHostNetworkRequest(
+        [href, { method: "GET" }],
+        this.#networkingRules,
+      );
+
+      if (!response.ok) {
+        return failure(
+          new VMError(
+            VMErrorCode.VMRuntimeError,
+            `URL evaluation failed with HTTP status ${response.status}.`,
+            { path: href, reason: "http status" },
+          ),
+        );
+      }
+
+      if (maxBytes !== undefined && utf8ByteLength(response.bodyText) > maxBytes) {
+        return failure(
+          new VMError(
+            VMErrorCode.VMSecurityError,
+            "URL evaluation response exceeds maxBytes.",
+            { path: href, reason: "max bytes exceeded" },
+          ),
+        );
+      }
+
+      return this.evaluate(response.bodyText, {
+        sourceType: options.sourceType,
+        timeLimit: options.timeLimit,
+      });
+    } catch (error) {
+      return failure(toVMError(error));
+    }
+  }
+
+  async #loadRootModule(
+    specifier: string,
+    rootContext: VMExecutionContext,
+  ): Promise<VMModuleRecord> {
+    const resolution = await this.#moduleLoader.resolve({ specifier });
+    const existing = this.#moduleGraph.get(resolution.specifier);
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    const source = await this.#moduleLoader.load({
+      attributes: resolution.attributes,
+      specifier: resolution.specifier,
+    });
+    return this.#createLoadedModuleRecord(
+      source,
+      resolution,
+      rootContext,
+      this.#moduleGraph,
     );
   }
 
@@ -801,6 +1074,76 @@ export class VM {
     return this.#context;
   }
 
+  #createEvaluationContext(timeLimit: number | undefined): VMExecutionContext {
+    const baseContext = this.#getContext();
+    return createExecutionContext({
+      globalEnvironment: baseContext.globalEnvironment,
+      globalObject: baseContext.globalObject,
+      lexicalEnvironment: baseContext.globalEnvironment,
+      thisValue: baseContext.globalObject,
+      variableEnvironment: baseContext.globalEnvironment,
+      budget: { timeLimitMs: timeLimit },
+    });
+  }
+
+  #createHandleContext(generation: number): VMExecutionContext {
+    this.#assertHandleUsable(generation);
+    return this.#createEvaluationContext(
+      normalizeTimeLimit(this.#executionRules.timeLimit),
+    );
+  }
+
+  #assertHandleUsable(generation: number): void {
+    this.#assertUsable();
+
+    if (generation !== this.#generation) {
+      throw new VMError(
+        VMErrorCode.VMRuntimeError,
+        "VM handle is no longer valid because the VM was reset or disposed.",
+        { reason: "stale handle" },
+      );
+    }
+  }
+
+  #createFunctionHandle(
+    name: string,
+    callable: unknown,
+    generation: number,
+    thisValue?: unknown,
+  ): VMFunctionHandle {
+    return Object.freeze(
+      new VMFunctionHandleImpl(
+        name,
+        callable,
+        () => this.#createHandleContext(generation),
+        thisValue,
+      ),
+    );
+  }
+
+  #createModuleHandle(
+    record: VMModuleRecord,
+    generation: number,
+  ): VMModuleHandle {
+    const exports = getModuleExports(record);
+    const exportNames = [...exports.keys()].sort();
+
+    return Object.freeze(
+      new VMModuleHandleImpl(
+        record.specifier,
+        exportNames,
+        () => this.#createHandleContext(generation),
+        (name) => getRequiredModuleExport(record, name, "<host>"),
+        (name, value) =>
+          this.#createFunctionHandle(
+            `${record.specifier}.${name}`,
+            value,
+            generation,
+          ),
+      ),
+    );
+  }
+
   #assertUsable(): void {
     this.#assertNotDisposed();
 
@@ -954,7 +1297,40 @@ function createSafeArray(): object {
   );
 }
 
-function success<T extends VMSerializableValue>(value: T): VMSuccessResult<T> {
+function normalizeEvaluateUrl(url: string | URL): string {
+  const href = url instanceof URL ? url.href : url;
+  if (typeof href !== "string" || href.length === 0) {
+    throw new VMError(
+      VMErrorCode.VMSecurityError,
+      "URL evaluation requires a non-empty URL string.",
+      { path: "url", reason: "invalid url" },
+    );
+  }
+
+  return new URL(href).href;
+}
+
+function normalizeMaxBytes(value: number | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new VMError(
+      VMErrorCode.VMSecurityError,
+      "URL evaluation maxBytes must be a non-negative safe integer.",
+      { path: "maxBytes", reason: "invalid max bytes" },
+    );
+  }
+
+  return value;
+}
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function success<T>(value: T): VMSuccessResult<T> {
   return Object.freeze({ ok: true, value });
 }
 

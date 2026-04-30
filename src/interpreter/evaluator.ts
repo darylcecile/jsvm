@@ -2234,6 +2234,58 @@ export async function executeProgramForSideEffects(
   }
 }
 
+export function isGuestCallableValue(value: unknown): boolean {
+  return isCallableValue(value);
+}
+
+export async function exportGuestValueForHost(
+  value: unknown,
+  context: VMExecutionContext,
+): Promise<VMSerializableValue> {
+  try {
+    return await exportGuestValue(value as VMInternalValue, context);
+  } catch (error) {
+    if (error instanceof VMGuestException) {
+      throw runtimeError("Guest code threw a value.", {
+        reason: "throw completion",
+        valueType: guestTypeof(error.value),
+      });
+    }
+    throw normalizeEvaluatorError(error);
+  }
+}
+
+export async function invokeGuestCallableForHost(
+  callable: unknown,
+  args: readonly VMSerializableValue[],
+  context: VMExecutionContext,
+  thisValue?: unknown,
+): Promise<VMSerializableValue> {
+  try {
+    const intrinsics = getIntrinsics(context);
+    const importedArgs = args.map((arg, index) =>
+      importGuestValue(arg, `<host-rpc-arg>[${index}]`, intrinsics)
+    );
+    const result = await invokeCallableValue(
+      callable as VMInternalValue,
+      importedArgs,
+      context,
+      thisValue as VMInternalValue | undefined,
+      (thisValue as VMInternalValue | undefined) ?? context.globalObject,
+    );
+
+    return await exportGuestValue(result, context);
+  } catch (error) {
+    if (error instanceof VMGuestException) {
+      throw runtimeError("Guest code threw a value.", {
+        reason: "throw completion",
+        valueType: guestTypeof(error.value),
+      });
+    }
+    throw normalizeEvaluatorError(error);
+  }
+}
+
 export async function serializeGuestValueForSnapshot(
   value: unknown,
   context: VMExecutionContext,
