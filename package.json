@@ -1,6 +1,6 @@
 {
   "name": "@catmint-fs/jsvm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "VM for JS in JS",
   "type": "module",
   "license": "MIT",
