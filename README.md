@@ -19,32 +19,61 @@ import { VM, networkRule, VMErrorCode } from "@catmint-fs/jsvm";
 ## Quick start
 
 ```ts
-import { VM } from "@catmint-fs/jsvm";
+import { VM, networkRule } from "@catmint-fs/jsvm";
 
 const vm = new VM({
-  globals: {
-    console: {
-      log(message) {
-        console.log("guest:", message);
-      },
-    },
-    data: { count: 1 },
-  },
-  capabilities: {
-    executionRules: { timeLimit: 100 },
-    numbers: { randomSeed: "demo", dateNow: 1_697_059_200_000 },
-  },
+	capabilities: {
+		// networking capabilities are controlled in the host, and the VM's fetch and XMLHttpRequest wrappers would make the requests to the host (who makes the actual network request) and enforce the declared rules for allowed hosts, methods, paths, and headers - the VM would serialize fetch/XHR arguments, send them to the host, check them against the rules, and either perform the request and return a serialized response or throw a security error if the request violates the rules. Requests are reconstructed in the VM.
+		networkingRules: [
+			networkRule("example.com")
+				.allow({ methods: ["GET"], paths: ["/api/*", "/home" ] })
+				.setHeaders({ "X-API-Key": "secret" }),
+			networkRule("another.com")
+				.allow() // allow everything to another.com
+		],
+		executionRules: {
+			timeLimit: 1000, // milliseconds of execution time before the VM stops evaluating and throws a timeout error - this would be implemented with cooperative yielding in the VM and a timer in the host, so it would not be a hard guarantee but it would provide a best-effort guardrail against infinite loops or long-running code. Optional, when not set the VM would have no execution time limit.
+		},
+		numbers: {
+			randomSeed: "optional-seed-for-deterministic-randomness" // if provided, the VM's random number generator would produce deterministic results based on the seed, which can be useful for testing or reproducible behavior. If not provided, the VM would use a non-deterministic source of randomness. The random capability would expose a safe interface for generating random values without giving access to host randomness sources or allowing guest code to influence host behavior.
+			dateNow: 1697059200000 // if provided, the VM's Date.now() would return this fixed timestamp, which can be useful for testing or controlling time-dependent behavior. If not provided, Date.now() would return the actual current time in milliseconds since the epoch. This allows the host to control the passage of time in the VM without giving guest code access to host timing APIs or allowing it to affect host timers.
+		}
+	},
+	globals: {
+		// optional additional globals to mirror in the VM, but not shared with the host - these would be deeply reconstructed in the VM and not provide any access to host objects or intrinsics, so they would be safe to use as a starting point for the global scope if desired
+		console: {
+			log: (message: string) => {
+				// this function runs in the host, so it can do things like log to the host console, but it is passed into the VM as a capability and cannot be used to escape the VM or access host objects - the VM would wrap this function in a way that safely reconstructs arguments and return values across the boundary
+				console.log(message);
+			},
+		}
+	},
+
 });
 
-await vm.start();
+await vm.start(); // required step that initializes the VM.
 
-const result = await vm.evaluate("console.log(data.count); data.count + 1");
-if (result.ok) {
-  console.log(result.value); // 2
-} else {
-  console.error(result.error.code, result.error.message);
-}
+const resultA = await vm.eval("log('hello from the guest'); 1 + 2");
+const resultB = await vm.evalFile("/path/to/script.js");
+const resultC = await vm.evalRemote("https://example.com/script.js");
 
+const resultD = await vm.dangerously.import("https://example.com/module.js"); // returns whatever the module exports after evaluating it in the VM
+
+const snapshot = vm.snapshot();
+// ... later ...
+const vm2 = VM.fromSnapshot(snapshot);
+
+// interfacing
+const module = await vm.import("https://example.com/module.js"); // returns a wrapped module namespace object with only the exported values, no access to host globals or intrinsics - any calls into the module are proxied through the VM boundary and results are reconstructed safely after serialization of values
+const out = await module.someFunction("hello"); // calls someFunction in the VM, passing "hello" as an argument, and returns a reconstructed result in the host with serialized values crossing the boundary safely
+
+// global extraction
+const guestGlobalMain = await vm.getGlobalFunction("main"); // retrieves a global function named "main" from the VM, returning a wrapped function that can be called from the host - when called, it executes the guest's main function in the VM and returns a reconstructed result in the host, with arguments and return values safely crossing the boundary through serialization and wrapping to prevent access to host objects or intrinsics
+
+// wait for microtasks to complete in the VM (e.g. pending promises) - this would be necessary to ensure that all guest code has finished executing before, for example, taking a snapshot or disposing the VM, since the VM's event loop and microtask queue would be managed internally and not directly observable from the host
+await vm.idle();
+
+// clean up resources when done
 vm.dispose();
 ```
 
