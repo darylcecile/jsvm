@@ -179,6 +179,24 @@ describe("VM", () => {
     });
   });
 
+  test("enforces execution step budgets", async () => {
+    const vm = new VM({ executionRules: { maxSteps: 3 } });
+    await vm.start();
+
+    expectVMFailure(
+      await vm.eval("let i = 0; while (true) { i += 1; }"),
+      VMErrorCode.VMTimeoutError,
+    );
+
+    const overrideVm = new VM({ executionRules: { maxSteps: 100 } });
+    await overrideVm.start();
+
+    expectVMFailure(
+      await overrideVm.eval("let i = 0; while (true) { i += 1; }", { maxSteps: 5 }),
+      VMErrorCode.VMTimeoutError,
+    );
+  });
+
   test("keeps default host globals unavailable and default-denies networking", async () => {
     const vm = new VM();
     await vm.start();

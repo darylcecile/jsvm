@@ -34,6 +34,7 @@ const vm = new VM({
 		executionRules: {
         maxSteps: 50_000, // maximum number of interpreter checkpoints before the VM stops evaluating and throws a step budget error. Optional; when unset the VM has no step budget.
 			timeLimit: 1000, // milliseconds of execution time before the VM stops evaluating and throws a timeout error - this would be implemented with cooperative yielding in the VM and a timer in the host, so it would not be a hard guarantee but it would provide a best-effort guardrail against infinite loops or long-running code. Optional, when not set the VM would have no execution time limit.
+      maxSteps: 50_000, // optional step budget for interpreter checkpoints; this is a cooperative guardrail, not an instruction-accurate counter.
 		},
 		numbers: {
 			randomSeed: "optional-seed-for-deterministic-randomness" // if provided, the VM's random number generator would produce deterministic results based on the seed, which can be useful for testing or reproducible behavior. If not provided, the VM would use a non-deterministic source of randomness. The random capability would expose a safe interface for generating random values without giving access to host randomness sources or allowing guest code to influence host behavior.
@@ -289,11 +290,12 @@ Unsupported syntax generally produces a structured `VM_RUNTIME_ERROR` with `deta
 
 Therefore time limits are guardrails, not hard CPU guarantees. A synchronous host capability can still block while it runs, and there is currently no independent memory limit, public instruction counter, scheduler, or deterministic event loop.
 
-`executionRules.maxSteps` and per-call `evaluate(source, { maxSteps })` provide a cooperative execution step budget:
 
-- the interpreter increments a step counter at checkpoints within expressions, statements, and loop iterations;
-- long-running loops are interrupted once the step budget is exhausted;
-- step budgets fail with `VM_STEPS_EXCEEDED_ERROR`.
+`executionRules.maxSteps` and per-call `evaluate(source, { maxSteps })` provide a cooperative step budget:
+
+- the interpreter checks the step budget at statements, expressions, and loop iterations;
+- the budget is a guardrail and does not map to exact bytecode or instruction counts.
+
 
 ## Deterministic numbers and time
 

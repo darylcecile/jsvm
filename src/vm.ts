@@ -54,8 +54,11 @@ export interface VMExecutionRules {
    * isolation guarantee.
    */
   readonly timeLimit?: number;
+
   /**
-   * Best-effort execution step budget for cooperative interpreter checkpoints.
+   * Best-effort step budget for interpreter checkpoints.
+   *
+   * This is a cooperative guardrail, not an instruction-accurate counter.
    */
   readonly maxSteps?: number;
 }
@@ -97,11 +100,13 @@ export interface VMOptions {
 export interface VMEvaluateOptions {
   readonly timeLimit?: number;
   readonly maxSteps?: number;
+  readonly maxSteps?: number;
   readonly sourceType?: VMParserSourceType;
 }
 
 export interface VMImportOptions {
   readonly timeLimit?: number;
+  readonly maxSteps?: number;
   readonly maxSteps?: number;
 }
 
@@ -574,6 +579,10 @@ export class VM {
         options.maxSteps ?? this.#executionRules.maxSteps,
       );
       const evaluationContext = this.#createEvaluationContext(timeLimit, maxSteps);
+      const maxSteps = normalizeMaxSteps(
+        options.maxSteps ?? this.#executionRules.maxSteps,
+      );
+      const evaluationContext = this.#createEvaluationContext(timeLimit, maxSteps);
       const program = parseProgram(source, { sourceType: options.sourceType });
 
       if (program.sourceType === "module") {
@@ -775,6 +784,10 @@ export class VM {
         options.maxSteps ?? this.#executionRules.maxSteps,
       );
       const rootContext = this.#createEvaluationContext(timeLimit, maxSteps);
+      const maxSteps = normalizeMaxSteps(
+        options.maxSteps ?? this.#executionRules.maxSteps,
+      );
+      const rootContext = this.#createEvaluationContext(timeLimit, maxSteps);
       const record = await this.#loadRootModule(specifier, rootContext);
       if (record.status !== "evaluated") {
         this.#refreshModuleRecordContext(record, rootContext, new Set());
@@ -829,8 +842,8 @@ export class VM {
 
       return this.evaluate(response.bodyText, {
         sourceType: options.sourceType,
-        timeLimit,
-        maxSteps,
+        timeLimit: options.timeLimit,
+        maxSteps: options.maxSteps,
       });
     } catch (error) {
       return failure(toVMError(error));
@@ -1135,7 +1148,10 @@ export class VM {
     return this.#context;
   }
 
-  #createEvaluationContext(timeLimit: number | undefined, maxSteps: number | undefined): VMExecutionContext {
+  #createEvaluationContext(
+    timeLimit: number | undefined,
+    maxSteps: number | undefined,
+  ): VMExecutionContext {
     const baseContext = this.#getContext();
     return createExecutionContext({
       globalEnvironment: baseContext.globalEnvironment,
@@ -1144,6 +1160,7 @@ export class VM {
       thisValue: baseContext.globalObject,
       variableEnvironment: baseContext.globalEnvironment,
       budget: { timeLimitMs: timeLimit, maxSteps },
+      budget: { timeLimitMs: timeLimit, maxSteps },
     });
   }
 
@@ -1151,6 +1168,7 @@ export class VM {
     this.#assertHandleUsable(generation);
     return this.#createEvaluationContext(
       normalizeTimeLimit(this.#executionRules.timeLimit),
+      normalizeMaxSteps(this.#executionRules.maxSteps),
       normalizeMaxSteps(this.#executionRules.maxSteps),
     );
   }
@@ -1421,11 +1439,11 @@ function normalizeMaxSteps(value: number | undefined): number | undefined {
     return undefined;
   }
 
-  if (!Number.isInteger(value) || value < 0) {
+  if (!Number.isSafeInteger(value) || value < 0) {
     throw new VMError(
       VMErrorCode.VMRuntimeError,
-      "executionRules.maxSteps must be a non-negative integer.",
-      { valueType: typeof value, reason: "Literal", path: "maxSteps" },
+      "executionRules.maxSteps must be a non-negative safe integer.",
+      { valueType: typeof value },
     );
   }
 
