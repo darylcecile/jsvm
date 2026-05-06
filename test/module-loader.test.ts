@@ -98,7 +98,9 @@ describe("module loader", () => {
     });
     expect(Object.isFrozen(resolution)).toBe(true);
     expect(Object.isFrozen(resolution.attributes as object)).toBe(true);
-    expect(Object.isFrozen((resolution.attributes as { list: unknown[] }).list)).toBe(true);
+    expect(
+      Object.isFrozen((resolution.attributes as { list: unknown[] }).list),
+    ).toBe(true);
 
     expect(source).toMatchObject({
       type: "module-source",
@@ -116,7 +118,10 @@ describe("module loader", () => {
       normalizeModuleLoader({ resolve: "not a function" as never }),
     ).toThrow(VMError);
     expect(() =>
-      normalizeModuleLoader({ resolve: () => "./x.js", ambient: true } as never),
+      normalizeModuleLoader({
+        resolve: () => "./x.js",
+        ambient: true,
+      } as never),
     ).toThrow(VMError);
 
     const missingResolve = normalizeModuleLoader({});
@@ -147,7 +152,8 @@ describe("module loader", () => {
     );
 
     const badMetadata = normalizeModuleLoader({
-      load: () => ({ source: "export {};", attributes: { live: new Date() } }) as never,
+      load: () =>
+        ({ source: "export {};", attributes: { live: new Date() } }) as never,
     });
     await expectRejectedVMError(
       badMetadata.load({ specifier: "./x.js" }),
@@ -206,6 +212,39 @@ describe("module loader", () => {
     }
     expect(resolvedSpecifiers).toEqual(["./dep.js"]);
     expect(loadedSpecifiers).toEqual(["./dep.js"]);
+  });
+
+  test("VM can retry module evaluation after step budget exhaustion", async () => {
+    const moduleLoader: VMNormalizedModuleLoader = normalizeModuleLoader({
+      resolve(request) {
+        return request.specifier;
+      },
+      load(request) {
+        if (request.specifier !== "entry") {
+          throw new VMError(
+            VMErrorCode.VMSecurityError,
+            "Unknown module specifier.",
+            { path: request.specifier, reason: "module loader denied" },
+          );
+        }
+        return "let i = 0; while (i < 10) { i += 1; } export const value = i;";
+      },
+    });
+    const vm = new VM({ capabilities: { moduleLoader } });
+    await vm.start();
+
+    const firstAttempt = await vm.import("entry", { maxSteps: 5 });
+    expect(firstAttempt.ok).toBe(false);
+    if (!firstAttempt.ok) {
+      expect(firstAttempt.error.code).toBe(VMErrorCode.VMStepsExceededError);
+    }
+
+    const secondAttempt = await vm.import("entry", { maxSteps: 100 });
+    expect(secondAttempt.ok).toBe(true);
+    if (secondAttempt.ok) {
+      const valueResult = await secondAttempt.value.get("value");
+      expect(valueResult).toEqual({ ok: true, value: 10 });
+    }
   });
 
   test("VM evaluates named, default, namespace imports, and re-exports", async () => {
@@ -390,7 +429,9 @@ describe("module loader", () => {
     });
     const deniedVM = new VM({ capabilities: { moduleLoader: deniedLoader } });
     await deniedVM.start();
-    const denied = await deniedVM.evaluate("import 'dep';", { sourceType: "module" });
+    const denied = await deniedVM.evaluate("import 'dep';", {
+      sourceType: "module",
+    });
     expect(denied.ok).toBe(false);
     if (!denied.ok) {
       expect(denied.error.code).toBe(VMErrorCode.VMSecurityError);
@@ -406,9 +447,12 @@ describe("module loader", () => {
       },
     });
     await missingExportVM.start();
-    const missing = await missingExportVM.evaluate("import { value } from 'dep';", {
-      sourceType: "module",
-    });
+    const missing = await missingExportVM.evaluate(
+      "import { value } from 'dep';",
+      {
+        sourceType: "module",
+      },
+    );
     expect(missing.ok).toBe(false);
     if (!missing.ok) {
       expect(missing.error.code).toBe(VMErrorCode.VMRuntimeError);
@@ -445,7 +489,9 @@ describe("module loader", () => {
       },
     });
     await cycleVM.start();
-    const cycle = await cycleVM.evaluate("import 'a';", { sourceType: "module" });
+    const cycle = await cycleVM.evaluate("import 'a';", {
+      sourceType: "module",
+    });
     expect(cycle.ok).toBe(false);
     if (!cycle.ok) {
       expect(cycle.error.code).toBe(VMErrorCode.VMRuntimeError);

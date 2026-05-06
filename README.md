@@ -203,10 +203,13 @@ Handle calls serialize host arguments into the guest realm and serialize return 
 `vm.dangerously.evaluateUrl(url, options?)` is an explicit escape hatch for loading source text from a URL and running it in the VM:
 
 ```ts
-const result = await vm.dangerously.evaluateUrl("https://cdn.example.com/plugin.js", {
-  sourceType: "script",
-  maxBytes: 100_000,
-});
+const result = await vm.dangerously.evaluateUrl(
+  "https://cdn.example.com/plugin.js",
+  {
+    sourceType: "script",
+    maxBytes: 100_000,
+  },
+);
 ```
 
 The URL load is still mediated by `networkingRules`, uses `GET`, applies rule-injected headers, and evaluates through the interpreter. It does not bypass the VM boundary and does not use host `eval`, but it is dangerous because the host is choosing to run remote code.
@@ -290,8 +293,7 @@ Unsupported syntax generally produces a structured `VM_RUNTIME_ERROR` with `deta
 
 Therefore time limits are guardrails, not hard CPU guarantees. A synchronous host capability can still block while it runs, and there is currently no independent memory limit, public instruction counter, scheduler, or deterministic event loop.
 
-
-`executionRules.maxSteps` and per-call `evaluate(source, { maxSteps })` provide a cooperative step budget:
+`executionRules.maxSteps` and per-call `evaluate(source, { maxSteps })`, `import(specifier, { maxSteps })`, and `dangerously.evaluateUrl(url, { maxSteps })` provide a cooperative step budget:
 
 - the interpreter checks the step budget at statements, expressions, and loop iterations;
 - the budget is a guardrail and does not map to exact bytecode or instruction counts.

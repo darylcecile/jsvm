@@ -25,7 +25,11 @@ export class VMError extends Error {
   readonly code: VMErrorCode;
   readonly details: VMErrorDetails;
 
-  constructor(code: VMErrorCode, message: string, details: VMErrorDetails = {}) {
+  constructor(
+    code: VMErrorCode,
+    message: string,
+    details: VMErrorDetails = {},
+  ) {
     super(message);
     this.name = "VMError";
     this.code = code;
@@ -137,7 +141,10 @@ export type VMSerializedValue =
     }
   | {
       readonly kind: "map";
-      readonly entries: readonly (readonly [VMSerializedValue, VMSerializedValue])[];
+      readonly entries: readonly (readonly [
+        VMSerializedValue,
+        VMSerializedValue,
+      ])[];
     }
   | { readonly kind: "set"; readonly values: readonly VMSerializedValue[] }
   | { readonly kind: "arrayBuffer"; readonly bytes: readonly number[] }
@@ -217,7 +224,11 @@ export function createCapability(
   };
 
   if (!isCapabilityMetadata(metadataCandidate)) {
-    throw unsupported("$", metadataCandidate, "Capability metadata is invalid.");
+    throw unsupported(
+      "$",
+      metadataCandidate,
+      "Capability metadata is invalid.",
+    );
   }
 
   const metadata = freezeCapabilityMetadata(metadataCandidate);
@@ -255,10 +266,14 @@ export function createCapability(
 }
 
 export function isVMCapability(value: unknown): value is VMCapability {
-  return typeof value === "object" && value !== null && capabilityRecords.has(value);
+  return (
+    typeof value === "object" && value !== null && capabilityRecords.has(value)
+  );
 }
 
-export function isVMCapabilityReference(value: unknown): value is VMCapabilityReference {
+export function isVMCapabilityReference(
+  value: unknown,
+): value is VMCapabilityReference {
   if (!isPlainRecord(value)) {
     return false;
   }
@@ -273,7 +288,11 @@ export async function invokeBoundaryCapability(
   const record = capabilityRecords.get(capability);
 
   if (record === undefined) {
-    throw unsupported("$", capability, "Expected a VM capability created by createCapability().");
+    throw unsupported(
+      "$",
+      capability,
+      "Expected a VM capability created by createCapability().",
+    );
   }
 
   if (record.revoked) {
@@ -285,10 +304,16 @@ export async function invokeBoundaryCapability(
   }
 
   const safeArgs = args.map((arg, index) =>
-    serializeAndReconstructBoundaryValueAtPath(arg, { allowCapabilities: false }, `$[${index}]`),
+    serializeAndReconstructBoundaryValueAtPath(
+      arg,
+      { allowCapabilities: false },
+      `$[${index}]`,
+    ),
   );
   const result = await record.handler(...safeArgs);
-  return serializeAndReconstructBoundaryValue(result, { allowCapabilities: true });
+  return serializeAndReconstructBoundaryValue(result, {
+    allowCapabilities: true,
+  });
 }
 
 export function serializeBoundaryValue(
@@ -392,7 +417,11 @@ function serialize(
 
   if (isVMCapability(value)) {
     if (!state.allowCapabilities) {
-      throw unsupported(path, value, "Capabilities are not allowed in this boundary position.");
+      throw unsupported(
+        path,
+        value,
+        "Capabilities are not allowed in this boundary position.",
+      );
     }
 
     const record = capabilityRecords.get(value);
@@ -429,19 +458,26 @@ function serialize(
       const entries: (readonly [VMSerializedValue, VMSerializedValue])[] = [];
       let index = 0;
       try {
-        Map.prototype.forEach.call(value, (entryValue: unknown, entryKey: unknown) => {
-          entries.push([
-            serialize(entryKey, `${path}<map[${index}].key>`, state),
-            serialize(entryValue, `${path}<map[${index}].value>`, state),
-          ]);
-          index += 1;
-        });
+        Map.prototype.forEach.call(
+          value,
+          (entryValue: unknown, entryKey: unknown) => {
+            entries.push([
+              serialize(entryKey, `${path}<map[${index}].key>`, state),
+              serialize(entryValue, `${path}<map[${index}].value>`, state),
+            ]);
+            index += 1;
+          },
+        );
       } catch (error) {
         if (error instanceof VMError) {
           throw error;
         }
 
-        throw unsupported(path, value, "Map values must be readable Map instances.");
+        throw unsupported(
+          path,
+          value,
+          "Map values must be readable Map instances.",
+        );
       }
       return { kind: "map", entries };
     }
@@ -460,14 +496,21 @@ function serialize(
           throw error;
         }
 
-        throw unsupported(path, value, "Set values must be readable Set instances.");
+        throw unsupported(
+          path,
+          value,
+          "Set values must be readable Set instances.",
+        );
       }
       return { kind: "set", values };
     }
 
     if (tag === "[object ArrayBuffer]") {
       assertNoUnexpectedProperties(value, path, new Set<string>());
-      return { kind: "arrayBuffer", bytes: copyBytes(value as ArrayBuffer, path) };
+      return {
+        kind: "arrayBuffer",
+        bytes: copyBytes(value as ArrayBuffer, path),
+      };
     }
 
     if (tag === "[object DataView]") {
@@ -488,11 +531,19 @@ function serialize(
     }
 
     if (tag === "[object WeakMap]" || tag === "[object WeakSet]") {
-      throw unsupported(path, value, "Weak collections cannot cross the VM boundary.");
+      throw unsupported(
+        path,
+        value,
+        "Weak collections cannot cross the VM boundary.",
+      );
     }
 
     if (tag === "[object Promise]") {
-      throw unsupported(path, value, "Promises cannot cross the VM boundary as values.");
+      throw unsupported(
+        path,
+        value,
+        "Promises cannot cross the VM boundary as values.",
+      );
     }
 
     if (isPlainObjectLike(value)) {
@@ -518,7 +569,11 @@ function serializeArray(
   const symbolKeys = Object.getOwnPropertySymbols(value);
 
   if (symbolKeys.length > 0) {
-    throw unsupported(path, value, "Arrays with symbol properties cannot cross the VM boundary.");
+    throw unsupported(
+      path,
+      value,
+      "Arrays with symbol properties cannot cross the VM boundary.",
+    );
   }
 
   for (const key of Object.keys(descriptors)) {
@@ -526,7 +581,11 @@ function serializeArray(
       continue;
     }
 
-    throw unsupported(pathForProperty(path, key), value, "Arrays cannot carry custom properties.");
+    throw unsupported(
+      pathForProperty(path, key),
+      value,
+      "Arrays cannot carry custom properties.",
+    );
   }
 
   const items: VMSerializedValue[] = [];
@@ -539,7 +598,10 @@ function serializeArray(
       continue;
     }
 
-    if (!isSerializableDataDescriptor(descriptor) || descriptor.enumerable !== true) {
+    if (
+      !isSerializableDataDescriptor(descriptor) ||
+      descriptor.enumerable !== true
+    ) {
       throw unsupported(
         `${path}[${index}]`,
         value,
@@ -562,13 +624,20 @@ function serializePlainObject(
   const symbolKeys = Object.getOwnPropertySymbols(value);
 
   if (symbolKeys.length > 0) {
-    throw unsupported(path, value, "Objects with symbol properties cannot cross the VM boundary.");
+    throw unsupported(
+      path,
+      value,
+      "Objects with symbol properties cannot cross the VM boundary.",
+    );
   }
 
   const entries: (readonly [string, VMSerializedValue])[] = [];
 
   for (const [key, descriptor] of Object.entries(descriptors)) {
-    if (!isSerializableDataDescriptor(descriptor) || descriptor.enumerable !== true) {
+    if (
+      !isSerializableDataDescriptor(descriptor) ||
+      descriptor.enumerable !== true
+    ) {
       throw unsupported(
         pathForProperty(path, key),
         value,
@@ -576,13 +645,19 @@ function serializePlainObject(
       );
     }
 
-    entries.push([key, serialize(descriptor.value, pathForProperty(path, key), state)]);
+    entries.push([
+      key,
+      serialize(descriptor.value, pathForProperty(path, key), state),
+    ]);
   }
 
   return { kind: "object", entries };
 }
 
-function deserialize(value: VMSerializedValue, path: string): VMSerializableValue {
+function deserialize(
+  value: VMSerializedValue,
+  path: string,
+): VMSerializableValue {
   if (!isPlainRecord(value) || typeof value.kind !== "string") {
     throw invalidSerialized(path, "Serialized values must be tagged records.");
   }
@@ -616,7 +691,9 @@ function deserialize(value: VMSerializedValue, path: string): VMSerializableValu
       if (!Array.isArray(value.items)) {
         throw invalidSerialized(path, "Invalid array payload.");
       }
-      return value.items.map((item, index) => deserialize(item, `${path}[${index}]`));
+      return value.items.map((item, index) =>
+        deserialize(item, `${path}[${index}]`),
+      );
     }
     case "object": {
       if (!Array.isArray(value.entries)) {
@@ -627,8 +704,15 @@ function deserialize(value: VMSerializedValue, path: string): VMSerializableValu
       for (let index = 0; index < value.entries.length; index += 1) {
         const entry = value.entries[index];
 
-        if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== "string") {
-          throw invalidSerialized(`${path}.entries[${index}]`, "Invalid object entry.");
+        if (
+          !Array.isArray(entry) ||
+          entry.length !== 2 ||
+          typeof entry[0] !== "string"
+        ) {
+          throw invalidSerialized(
+            `${path}.entries[${index}]`,
+            "Invalid object entry.",
+          );
         }
 
         Object.defineProperty(output, entry[0], {
@@ -654,7 +738,12 @@ function deserialize(value: VMSerializedValue, path: string): VMSerializableValu
       ) {
         throw invalidSerialized(path, "Invalid RegExp payload.");
       }
-      return reconstructRegExp(value.source, value.flags, value.lastIndex, path);
+      return reconstructRegExp(
+        value.source,
+        value.flags,
+        value.lastIndex,
+        path,
+      );
     case "map": {
       if (!Array.isArray(value.entries)) {
         throw invalidSerialized(path, "Invalid Map payload.");
@@ -665,7 +754,10 @@ function deserialize(value: VMSerializedValue, path: string): VMSerializableValu
         const entry = value.entries[index];
 
         if (!Array.isArray(entry) || entry.length !== 2) {
-          throw invalidSerialized(`${path}.entries[${index}]`, "Invalid Map entry.");
+          throw invalidSerialized(
+            `${path}.entries[${index}]`,
+            "Invalid Map entry.",
+          );
         }
 
         output.set(
@@ -691,7 +783,10 @@ function deserialize(value: VMSerializedValue, path: string): VMSerializableValu
     case "arrayBuffer":
       return bytesToArrayBuffer(value.bytes, path);
     case "typedArray": {
-      if (typeof value.type !== "string" || !(value.type in typedArrayConstructors)) {
+      if (
+        typeof value.type !== "string" ||
+        !(value.type in typedArrayConstructors)
+      ) {
         throw invalidSerialized(path, "Invalid typed array type.");
       }
       const buffer = bytesToArrayBuffer(value.bytes, path);
@@ -713,7 +808,9 @@ function deserialize(value: VMSerializedValue, path: string): VMSerializableValu
   );
 }
 
-function createCapabilityReference(metadata: VMCapabilityMetadata): VMCapabilityReference {
+function createCapabilityReference(
+  metadata: VMCapabilityMetadata,
+): VMCapabilityReference {
   const reference = Object.create(null) as VMCapabilityReference;
 
   Object.defineProperties(reference, {
@@ -730,7 +827,9 @@ function createCapabilityReference(metadata: VMCapabilityMetadata): VMCapability
   return Object.freeze(reference);
 }
 
-function freezeCapabilityMetadata(metadata: VMCapabilityMetadata): VMCapabilityMetadata {
+function freezeCapabilityMetadata(
+  metadata: VMCapabilityMetadata,
+): VMCapabilityMetadata {
   const clean = Object.create(null) as {
     id: string;
     name: string;
@@ -752,7 +851,11 @@ function freezeCapabilityMetadata(metadata: VMCapabilityMetadata): VMCapabilityM
   return Object.freeze(clean);
 }
 
-function enterObject(value: object, path: string, state: SerializationState): void {
+function enterObject(
+  value: object,
+  path: string,
+  state: SerializationState,
+): void {
   if (state.active.has(value)) {
     throw new VMError(VMErrorCode.BoundaryCycle, `Cycle detected at ${path}.`, {
       path,
@@ -773,7 +876,11 @@ function assertNoUnexpectedProperties(
 
   for (const key of keys) {
     if (typeof key !== "string") {
-      throw unsupported(path, value, "Built-in values with symbol properties cannot cross the VM boundary.");
+      throw unsupported(
+        path,
+        value,
+        "Built-in values with symbol properties cannot cross the VM boundary.",
+      );
     }
 
     if (!allowedStringKeys.has(key)) {
@@ -786,12 +893,19 @@ function assertNoUnexpectedProperties(
   }
 }
 
-function assertNoUnexpectedTypedArrayProperties(value: VMTypedArray, path: string): void {
+function assertNoUnexpectedTypedArrayProperties(
+  value: VMTypedArray,
+  path: string,
+): void {
   const length = value.length;
 
   for (const key of Reflect.ownKeys(value)) {
     if (typeof key !== "string") {
-      throw unsupported(path, value, "Typed arrays with symbol properties cannot cross the VM boundary.");
+      throw unsupported(
+        path,
+        value,
+        "Typed arrays with symbol properties cannot cross the VM boundary.",
+      );
     }
 
     if (isArrayIndex(key) && Number(key) < length) {
@@ -809,7 +923,11 @@ function assertNoUnexpectedTypedArrayProperties(value: VMTypedArray, path: strin
 function isSerializableDataDescriptor(
   descriptor: PropertyDescriptor,
 ): descriptor is PropertyDescriptor & { value: unknown } {
-  return "value" in descriptor && descriptor.get === undefined && descriptor.set === undefined;
+  return (
+    "value" in descriptor &&
+    descriptor.get === undefined &&
+    descriptor.set === undefined
+  );
 }
 
 function isPlainObjectLike(value: object): boolean {
@@ -823,7 +941,10 @@ function isPlainObjectLike(value: object): boolean {
     return true;
   }
 
-  return Object.getPrototypeOf(prototype) === null && hasOwn.call(prototype, "constructor");
+  return (
+    Object.getPrototypeOf(prototype) === null &&
+    hasOwn.call(prototype, "constructor")
+  );
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -843,7 +964,8 @@ function isCapabilityMetadata(value: unknown): value is VMCapabilityMetadata {
     value.id.length > 0 &&
     typeof value.name === "string" &&
     value.name.length > 0 &&
-    (arity === undefined || (typeof arity === "number" && Number.isInteger(arity) && arity >= 0)) &&
+    (arity === undefined ||
+      (typeof arity === "number" && Number.isInteger(arity) && arity >= 0)) &&
     (description === undefined || typeof description === "string")
   );
 }
@@ -852,15 +974,25 @@ function copyBytes(buffer: ArrayBuffer, path: string): number[] {
   try {
     return Array.from(new Uint8Array(buffer));
   } catch {
-    throw unsupported(path, buffer, "ArrayBuffer values must be readable and not detached.");
+    throw unsupported(
+      path,
+      buffer,
+      "ArrayBuffer values must be readable and not detached.",
+    );
   }
 }
 
 function copyViewBytes(view: ArrayBufferView, path: string): number[] {
   try {
-    return Array.from(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+    return Array.from(
+      new Uint8Array(view.buffer, view.byteOffset, view.byteLength),
+    );
   } catch {
-    throw unsupported(path, view, "ArrayBuffer views must be readable and not detached.");
+    throw unsupported(
+      path,
+      view,
+      "ArrayBuffer views must be readable and not detached.",
+    );
   }
 }
 
@@ -875,7 +1007,10 @@ function bytesToArrayBuffer(bytes: unknown, path: string): ArrayBuffer {
     const byte = bytes[index];
 
     if (!Number.isInteger(byte) || byte < 0 || byte > 255) {
-      throw invalidSerialized(`${path}.bytes[${index}]`, "Bytes must be integers between 0 and 255.");
+      throw invalidSerialized(
+        `${path}.bytes[${index}]`,
+        "Bytes must be integers between 0 and 255.",
+      );
     }
 
     output[index] = byte;
@@ -888,7 +1023,11 @@ function getDateTime(value: object, path: string): number {
   try {
     return Date.prototype.getTime.call(value);
   } catch {
-    throw unsupported(path, value, "Date values must be readable Date instances.");
+    throw unsupported(
+      path,
+      value,
+      "Date values must be readable Date instances.",
+    );
   }
 }
 
@@ -903,7 +1042,11 @@ function serializeRegExp(value: object, path: string): VMSerializedValue {
       lastIndex: regexp.lastIndex,
     };
   } catch {
-    throw unsupported(path, value, "RegExp values must be readable RegExp instances.");
+    throw unsupported(
+      path,
+      value,
+      "RegExp values must be readable RegExp instances.",
+    );
   }
 }
 
@@ -915,7 +1058,10 @@ function reconstructTypedArray(
   try {
     return new typedArrayConstructors[type](buffer);
   } catch {
-    throw invalidSerialized(path, "Typed array byte length is invalid for the requested type.");
+    throw invalidSerialized(
+      path,
+      "Typed array byte length is invalid for the requested type.",
+    );
   }
 }
 
