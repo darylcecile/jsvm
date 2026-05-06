@@ -58,7 +58,7 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported by opening a GitHub issue or by emailing darylcecile@gmail.com.
+reported privately by emailing darylcecile@gmail.com.
 Community leaders will review and investigate all complaints, and will respond
 in a way that is deemed appropriate to the circumstances.
 
