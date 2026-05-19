@@ -458,6 +458,18 @@ export class VM {
 
     this.#initializeContext(true);
     this.#state = "started";
+
+    function normalizeVMErrorDetails(details: unknown): VMErrorDetails {
+      if (details === undefined || details === null) {
+        return {};
+      }
+
+      if (isPlainObject(details)) {
+        return details;
+      }
+
+      return { reason: String(details) };
+    }
   }
 
   dispose(): void {
@@ -851,10 +863,12 @@ export class VM {
     try {
       this.#assertUsable();
 
-      // Validate maxSteps before any network request
-      if (options.maxSteps !== undefined) {
-        normalizeMaxSteps(options.maxSteps);
-      }
+      const timeLimit = normalizeTimeLimit(
+        options.timeLimit ?? this.#executionRules.timeLimit,
+      );
+      const maxSteps = normalizeMaxSteps(
+        options.maxSteps ?? this.#executionRules.maxSteps,
+      );
 
       const href = normalizeEvaluateUrl(url);
       const maxBytes = normalizeMaxBytes(options.maxBytes);
@@ -894,8 +908,8 @@ export class VM {
 
       return this.evaluate(response.bodyText, {
         sourceType: options.sourceType,
-        timeLimit: options.timeLimit,
-        maxSteps: options.maxSteps,
+        timeLimit,
+        maxSteps,
       });
     } catch (error) {
       return failure(toVMError(error));
@@ -909,6 +923,7 @@ export class VM {
     const resolution = await this.#moduleLoader.resolve({ specifier });
     const existing = this.#moduleGraph.get(resolution.specifier);
     if (existing !== undefined) {
+      this.#refreshModuleRecordContext(existing, rootContext, new Set());
       return existing;
     }
 
@@ -1047,7 +1062,10 @@ export class VM {
       const failure = toVMError(error);
 
       if (isRetryableModuleFailure(failure)) {
-        graph.delete(record.specifier);
+        record.status = "linked";
+        record.failure = undefined;
+        record.exports = undefined;
+        record.namespace = undefined;
       } else {
         record.status = "failed";
         record.failure = failure;
@@ -2298,7 +2316,11 @@ function toVMError(error: unknown): VMError {
   }
 
   if (isVMErrorRecord(error)) {
-    return new VMError(error.code, error.message, error.details);
+    return new VMError(
+      error.code,
+      error.message,
+      normalizeVMErrorDetails(error.details),
+    );
   }
 
   if (error instanceof SyntaxError) {
@@ -2320,12 +2342,18 @@ function toVMError(error: unknown): VMError {
 
 function isVMErrorRecord(
   error: unknown,
-): error is { readonly code: VMErrorCode; readonly message: string; readonly details: VMErrorDetails } {
+): error is {
+  readonly code: VMErrorCode;
+  readonly message: string;
+  readonly details?: unknown;
+} {
   return (
     isPlainObject(error) &&
     isVMErrorCode(error.code) &&
     typeof error.message === "string" &&
-    isPlainObject(error.details)
+    (error.details === undefined ||
+      error.details === null ||
+      typeof error.details === "object")
   );
 }
 
@@ -2334,6 +2362,18 @@ function isRetryableModuleFailure(error: VMError): boolean {
     error.code === VMErrorCode.VMTimeoutError ||
     error.code === VMErrorCode.VMStepsExceededError
   );
+}
+
+function normalizeVMErrorDetails(details: unknown): VMErrorDetails {
+  if (details === undefined || details === null) {
+    return {};
+  }
+
+  if (isPlainObject(details)) {
+    return details;
+  }
+
+  return { reason: String(details) };
 }
 
 function createSeededRandom(seed: string | number): () => number {
