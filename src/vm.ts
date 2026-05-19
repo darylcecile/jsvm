@@ -9,6 +9,7 @@ import {
   type VMBoundaryValue,
   type VMCapability,
   type VMCapabilityHandler,
+  type VMErrorDetails,
   type VMSerializableValue,
   type VMSerializedValue,
 } from "./boundary";
@@ -985,6 +986,14 @@ export class VM {
       return;
     }
 
+    if (record.status === "failed") {
+      throw record.failure ?? new VMError(
+        VMErrorCode.VMRuntimeError,
+        "Module evaluation failed.",
+        { path: record.specifier, reason: "module evaluation failed" },
+      );
+    }
+
     if (record.status === "evaluating" || record.status === "linking") {
       throw moduleRuntimeError(
         "Cyclic ES module graphs are not supported yet.",
@@ -1033,16 +1042,18 @@ export class VM {
       record.exports = this.#collectModuleExports(record, parsed, graph);
       record.namespace = createModuleNamespaceObject(record.exports);
       record.status = "evaluated";
+      record.failure = undefined;
     } catch (error) {
-      // If evaluation failed for any reason, remove the partially-created
-      // module record from the graph so callers can retry with a different
-      // execution budget or after a reset. This avoids permanently
-      // caching exhausted/failed module records.
-      graph.delete(record.specifier);
-      if (record.status !== "evaluated") {
-        record.status = "linked";
+      const failure = toVMError(error);
+
+      if (isRetryableModuleFailure(failure)) {
+        graph.delete(record.specifier);
+      } else {
+        record.status = "failed";
+        record.failure = failure;
       }
-      throw error;
+
+      throw failure;
     }
   }
 
@@ -1554,6 +1565,12 @@ function normalizeNetworkRule(rule: VMNetworkRuleInput): NetworkRuleDefinition {
     }),
     headers: Object.freeze({ ...definition.headers }),
   });
+}
+
+const VM_ERROR_CODES = new Set(Object.values(VMErrorCode));
+
+function isVMErrorCode(value: unknown): value is VMErrorCode {
+  return typeof value === "string" && VM_ERROR_CODES.has(value as VMErrorCode);
 }
 
 function isNetworkRuleBuilder(
@@ -2280,18 +2297,8 @@ function toVMError(error: unknown): VMError {
     return error;
   }
 
-  // Accept a plain object shape that carries a `code` string to preserve
-  // propagated VM error codes across boundaries where the original class
-  // identity may be lost (for example, when crossing promise boundaries).
-  if (typeof error === "object" && error !== null && "code" in (error as any)) {
-    try {
-      const maybeCode = (error as any).code as string | undefined;
-      const message = (error as any).message ?? String(error);
-      const details = (error as any).details ?? {};
-      if (typeof maybeCode === "string") {
-        return new VMError(maybeCode as VMErrorCode, message, details as any);
-      }
-    } catch {}
+  if (isVMErrorRecord(error)) {
+    return new VMError(error.code, error.message, error.details);
   }
 
   if (error instanceof SyntaxError) {
@@ -2308,6 +2315,24 @@ function toVMError(error: unknown): VMError {
     VMErrorCode.VMRuntimeError,
     `Guest evaluation failed: ${String(error)}`,
     { valueType: typeof error },
+  );
+}
+
+function isVMErrorRecord(
+  error: unknown,
+): error is { readonly code: VMErrorCode; readonly message: string; readonly details: VMErrorDetails } {
+  return (
+    isPlainObject(error) &&
+    isVMErrorCode(error.code) &&
+    typeof error.message === "string" &&
+    isPlainObject(error.details)
+  );
+}
+
+function isRetryableModuleFailure(error: VMError): boolean {
+  return (
+    error.code === VMErrorCode.VMTimeoutError ||
+    error.code === VMErrorCode.VMStepsExceededError
   );
 }
 

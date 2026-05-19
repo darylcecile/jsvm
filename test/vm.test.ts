@@ -1227,11 +1227,19 @@ describe("VM", () => {
       input: RequestInfo | URL,
       init?: RequestInit,
     ) => {
+      const url = String(input);
       requests.push({
-        url: String(input),
+        url,
         method: init?.method ?? "GET",
         headers: { ...(init?.headers as Record<string, string> | undefined) },
       });
+
+      if (url.endsWith("/slow.js")) {
+        return new Response("let i = 0; while (i < 10) { i += 1; } i;", {
+          status: 200,
+          headers: { "Content-Type": "text/javascript" },
+        });
+      }
 
       return new Response("remoteValue = 40; remoteValue + 2;", {
         status: 200,
@@ -1244,7 +1252,7 @@ describe("VM", () => {
         capabilities: {
           networkingRules: [
             networkRule("cdn.example.com")
-              .allow({ methods: ["GET"], paths: ["/allowed.js"] })
+              .allow({ methods: ["GET"], paths: ["/allowed.js", "/slow.js"] })
               .setHeaders({ "X-VM": "yes" }),
           ],
         },
@@ -1264,6 +1272,27 @@ describe("VM", () => {
           headers: { "X-VM": "yes" },
         },
       ]);
+
+      const requestsBeforeInvalidSteps = requests.length;
+      expectVMFailure(
+        await vm.dangerously.evaluateUrl("https://cdn.example.com/allowed.js", {
+          maxSteps: -1,
+        }),
+        VMErrorCode.VMRuntimeError,
+      );
+      expect(requests).toHaveLength(requestsBeforeInvalidSteps);
+
+      const requestsBeforeStepFailure = requests.length;
+      expectVMFailure(
+        await vm.dangerously.evaluateUrl("https://cdn.example.com/slow.js", {
+          maxSteps: 5,
+        }),
+        VMErrorCode.VMStepsExceededError,
+      );
+      expect(requests).toHaveLength(requestsBeforeStepFailure + 1);
+      expect(requests[requests.length - 1].url).toBe(
+        "https://cdn.example.com/slow.js",
+      );
 
       expectVMFailure(
         await vm.dangerously.eval("https://cdn.example.com/blocked.js"),
