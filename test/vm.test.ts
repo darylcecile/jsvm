@@ -959,6 +959,30 @@ describe("VM", () => {
     }
   });
 
+  test("returns structured errors for step budget exhaustion", async () => {
+    const vm = new VM({
+      capabilities: {
+        executionRules: {
+          maxSteps: 10,
+        },
+      },
+    });
+    await vm.start();
+
+    const result = await vm.eval(`
+      let total = 0;
+      for (let i = 0; i < 50; i++) {
+        total += i;
+      }
+      total;
+    `);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe(VMErrorCode.VMStepsExceededError);
+      expect(result.error.details.path).toBe("maxSteps");
+    }
+  });
+
   test("returns structured syntax, runtime, and security errors with details", async () => {
     const vm = new VM();
     await vm.start();

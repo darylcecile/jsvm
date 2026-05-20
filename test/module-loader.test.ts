@@ -357,6 +357,33 @@ describe("module loader", () => {
     }
   });
 
+  test("VM can retry module evaluation after step budget exhaustion", async () => {
+    const moduleLoader = normalizeModuleLoader({
+      resolve: ({ specifier }) => specifier,
+      load: () => `
+        let total = 0;
+        for (let i = 0; i < 50; i++) {
+          total += i;
+        }
+        export const value = total;
+      `,
+    });
+    const vm = new VM({ capabilities: { moduleLoader } });
+    await vm.start();
+
+    const exhausted = await vm.import("math", { maxSteps: 5 });
+    expect(exhausted.ok).toBe(false);
+    if (!exhausted.ok) {
+      expect(exhausted.error.code).toBe(VMErrorCode.VMStepsExceededError);
+    }
+
+    const recovered = await vm.import("math", { maxSteps: 500 });
+    expect(recovered.ok).toBe(true);
+    if (recovered.ok) {
+      expect(await recovered.value.get("value")).toEqual({ ok: true, value: 1225 });
+    }
+  });
+
   test("VM reports module loader, missing export, module throw, and cycle failures", async () => {
     const deniedLoader = normalizeModuleLoader({
       resolve: ({ specifier }) => specifier,

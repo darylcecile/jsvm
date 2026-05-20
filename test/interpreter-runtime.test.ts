@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createCapability, VMError, VMErrorCode } from "../src/boundary";
+import { VMError, VMErrorCode, createCapability } from "../src/boundary";
 import {
   VMEnvironment,
   createGlobalEnvironment,
@@ -85,7 +85,9 @@ describe("interpreter environments", () => {
   test("reconstructs initial global bindings and snapshots", () => {
     const hostGlobal = { nested: { value: 1 } };
     const environment = createGlobalEnvironment({ hostGlobal });
-    const guestGlobal = environment.get("hostGlobal") as { nested: { value: number } };
+    const guestGlobal = environment.get("hostGlobal") as {
+      nested: { value: number };
+    };
 
     guestGlobal.nested.value = 2;
     expect(hostGlobal.nested.value).toBe(1);
@@ -114,13 +116,23 @@ describe("interpreter execution primitives", () => {
 
   test("checks cooperative step and time budgets", () => {
     let now = 100;
-    const budget = new ExecutionBudget({ maxSteps: 3, timeLimitMs: 10, now: () => now });
+    const budget = new ExecutionBudget({
+      maxSteps: 3,
+      timeLimitMs: 10,
+      now: () => now,
+    });
 
     budget.checkpoint(2, "binary expression");
     expect(budget.stepsUsed).toBe(2);
     expect(budget.remainingSteps).toBe(1);
 
-    expect(() => budget.checkpoint(2, "loop body")).toThrow(VMError);
+    try {
+      budget.checkpoint(2, "loop body");
+      throw new Error("Expected step budget to fail.");
+    } catch (error) {
+      const vmError = expectVMError(error, VMErrorCode.VMStepsExceededError);
+      expect(vmError.details.path).toBe("maxSteps");
+    }
 
     budget.reset();
     now = 111;
@@ -146,7 +158,9 @@ describe("interpreter execution primitives", () => {
 
     context.checkpoint(1);
     expect(context.budget.remainingSteps).toBe(1);
-    expect(context.leaveLexicalEnvironment(block)).toBe(context.globalEnvironment);
+    expect(context.leaveLexicalEnvironment(block)).toBe(
+      context.globalEnvironment,
+    );
   });
 });
 
@@ -169,7 +183,9 @@ describe("interpreter host callable values", () => {
     expect((callable as { prototype?: unknown }).prototype).toBeUndefined();
     expect((callable as { constructor?: unknown }).constructor).toBeUndefined();
 
-    await expect(invokeHostCallable(callable, [guestArg])).resolves.toEqual({ ok: true });
+    await expect(invokeHostCallable(callable, [guestArg])).resolves.toEqual({
+      ok: true,
+    });
     expect(guestArg.nested.value).toBe(1);
     expect(Object.getPrototypeOf(observedArgs[0] as object)).toBeNull();
   });

@@ -96,17 +96,25 @@ export class ExecutionBudget {
     this.#stepsUsed += normalizedCost;
 
     if (this.maxSteps !== undefined && this.#stepsUsed > this.maxSteps) {
-      throw budgetError("Execution step budget exhausted.", {
-        reason,
-        path: "maxSteps",
-      });
+      throw budgetError(
+        VMErrorCode.VMStepsExceededError,
+        "Execution step budget exhausted.",
+        {
+          reason,
+          path: "maxSteps",
+        },
+      );
     }
 
     if (this.timeLimitMs !== undefined && this.elapsedMs > this.timeLimitMs) {
-      throw budgetError("Execution time limit exceeded.", {
-        reason,
-        path: "timeLimitMs",
-      });
+      throw budgetError(
+        VMErrorCode.VMTimeoutError,
+        "Execution time limit exceeded.",
+        {
+          reason,
+          path: "timeLimitMs",
+        },
+      );
     }
   }
 
@@ -211,6 +219,10 @@ function normalizeNonNegativeNumber(
   return value;
 }
 
-function budgetError(message: string, details: Record<string, string>): VMError {
-  return new VMError(VMErrorCode.VMTimeoutError, message, details);
+function budgetError(
+  code: VMErrorCode,
+  message: string,
+  details: Record<string, string>,
+): VMError {
+  return new VMError(code, message, details);
 }

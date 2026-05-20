@@ -42,7 +42,7 @@ describe("interpreter evaluator", () => {
       evaluateSource("while (true) {}", {
         context: createEvaluatorContext({ budget: { maxSteps: 20 } }),
       }),
-    ).rejects.toMatchObject({ code: VMErrorCode.VMTimeoutError });
+    ).rejects.toMatchObject({ code: VMErrorCode.VMStepsExceededError });
   });
 
   test("supports guest functions and arrow functions", async () => {

@@ -32,6 +32,7 @@ const vm = new VM({
 				.allow() // allow everything to another.com
 		],
 		executionRules: {
+        maxSteps: 50_000, // maximum number of interpreter checkpoints before the VM stops evaluating and throws a step budget error. Optional; when unset the VM has no step budget.
 			timeLimit: 1000, // milliseconds of execution time before the VM stops evaluating and throws a timeout error - this would be implemented with cooperative yielding in the VM and a timer in the host, so it would not be a hard guarantee but it would provide a best-effort guardrail against infinite loops or long-running code. Optional, when not set the VM would have no execution time limit.
 		},
 		numbers: {
@@ -137,7 +138,7 @@ Lifecycle:
 ```ts
 interface VMOptions {
   capabilities?: {
-    executionRules?: { timeLimit?: number };
+    executionRules?: { timeLimit?: number; maxSteps?: number };
     numbers?: { randomSeed?: string | number; dateNow?: number };
     networkingRules?: readonly (NetworkRuleDefinition | NetworkRuleBuilder)[];
     moduleLoader?: VMModuleLoader;
@@ -146,7 +147,7 @@ interface VMOptions {
   globals?: Record<string, VMGlobalValue>;
 
   // Also accepted as top-level aliases; top-level values override capabilities.*.
-  executionRules?: { timeLimit?: number };
+  executionRules?: { timeLimit?: number; maxSteps?: number };
   numbers?: { randomSeed?: string | number; dateNow?: number };
 }
 ```
@@ -287,6 +288,12 @@ Unsupported syntax generally produces a structured `VM_RUNTIME_ERROR` with `deta
 - browser-compatible JavaScript cannot synchronously interrupt arbitrary running code.
 
 Therefore time limits are guardrails, not hard CPU guarantees. A synchronous host capability can still block while it runs, and there is currently no independent memory limit, public instruction counter, scheduler, or deterministic event loop.
+
+`executionRules.maxSteps` and per-call `evaluate(source, { maxSteps })` provide a cooperative execution step budget:
+
+- the interpreter increments a step counter at checkpoints within expressions, statements, and loop iterations;
+- long-running loops are interrupted once the step budget is exhausted;
+- step budgets fail with `VM_STEPS_EXCEEDED_ERROR`.
 
 ## Deterministic numbers and time
 

@@ -54,6 +54,10 @@ export interface VMExecutionRules {
    * isolation guarantee.
    */
   readonly timeLimit?: number;
+  /**
+   * Best-effort execution step budget for cooperative interpreter checkpoints.
+   */
+  readonly maxSteps?: number;
 }
 
 export interface VMNumbersConfig {
@@ -92,11 +96,13 @@ export interface VMOptions {
 
 export interface VMEvaluateOptions {
   readonly timeLimit?: number;
+  readonly maxSteps?: number;
   readonly sourceType?: VMParserSourceType;
 }
 
 export interface VMImportOptions {
   readonly timeLimit?: number;
+  readonly maxSteps?: number;
 }
 
 export interface VMDangerousEvaluateUrlOptions extends VMEvaluateOptions {
@@ -167,19 +173,20 @@ type ASTNode = {
   readonly [key: string]: unknown;
 };
 
-type VMModuleStatus = "new" | "linking" | "linked" | "evaluating" | "evaluated";
+type VMModuleStatus = "new" | "linking" | "linked" | "evaluating" | "evaluated" | "failed";
 
 interface VMModuleRecord {
   readonly specifier: string;
   readonly source: string;
   readonly program: VMProgram;
-  readonly environment: VMEnvironment;
-  readonly context: VMExecutionContext;
+  environment: VMEnvironment;
+  context: VMExecutionContext;
   readonly dependencies: Map<string, VMModuleRecord>;
   status: VMModuleStatus;
   parsed?: ParsedModuleRecord;
   exports?: Map<string, unknown>;
   namespace?: VMObject;
+  failure?: VMError;
 }
 
 interface ParsedModuleRecord {
@@ -563,7 +570,10 @@ export class VM {
       const timeLimit = normalizeTimeLimit(
         options.timeLimit ?? this.#executionRules.timeLimit,
       );
-      const evaluationContext = this.#createEvaluationContext(timeLimit);
+      const maxSteps = normalizeMaxSteps(
+        options.maxSteps ?? this.#executionRules.maxSteps,
+      );
+      const evaluationContext = this.#createEvaluationContext(timeLimit, maxSteps);
       const program = parseProgram(source, { sourceType: options.sourceType });
 
       if (program.sourceType === "module") {
@@ -761,8 +771,14 @@ export class VM {
       const timeLimit = normalizeTimeLimit(
         options.timeLimit ?? this.#executionRules.timeLimit,
       );
-      const rootContext = this.#createEvaluationContext(timeLimit);
+      const maxSteps = normalizeMaxSteps(
+        options.maxSteps ?? this.#executionRules.maxSteps,
+      );
+      const rootContext = this.#createEvaluationContext(timeLimit, maxSteps);
       const record = await this.#loadRootModule(specifier, rootContext);
+      if (record.status !== "evaluated") {
+        this.#refreshModuleRecordContext(record, rootContext, new Set());
+      }
       await this.#evaluateModuleRecord(record, this.#moduleGraph, []);
 
       return success(this.#createModuleHandle(record, this.#generation));
@@ -780,6 +796,12 @@ export class VM {
 
       const href = normalizeEvaluateUrl(url);
       const maxBytes = normalizeMaxBytes(options.maxBytes);
+      const timeLimit = normalizeTimeLimit(
+        options.timeLimit ?? this.#executionRules.timeLimit,
+      );
+      const maxSteps = normalizeMaxSteps(
+        options.maxSteps ?? this.#executionRules.maxSteps,
+      );
       const response = await performHostNetworkRequest(
         [href, { method: "GET" }],
         this.#networkingRules,
@@ -807,7 +829,8 @@ export class VM {
 
       return this.evaluate(response.bodyText, {
         sourceType: options.sourceType,
-        timeLimit: options.timeLimit,
+        timeLimit,
+        maxSteps,
       });
     } catch (error) {
       return failure(toVMError(error));
@@ -861,6 +884,32 @@ export class VM {
       specifier,
       status: "new",
     };
+  }
+
+  #refreshModuleRecordContext(
+    record: VMModuleRecord,
+    rootContext: VMExecutionContext,
+    seen: Set<VMModuleRecord>,
+  ): void {
+    if (seen.has(record)) {
+      return;
+    }
+
+    seen.add(record);
+    const environment = createLexicalEnvironment(rootContext.globalEnvironment);
+    record.context = createExecutionContext({
+      globalEnvironment: rootContext.globalEnvironment,
+      globalObject: rootContext.globalObject,
+      lexicalEnvironment: environment,
+      thisValue: undefined,
+      variableEnvironment: environment,
+      budget: rootContext.budget,
+    });
+    record.environment = environment;
+
+    for (const dependency of record.dependencies.values()) {
+      this.#refreshModuleRecordContext(dependency, rootContext, seen);
+    }
   }
 
   async #evaluateModuleRecord(
@@ -918,8 +967,20 @@ export class VM {
       record.namespace = createModuleNamespaceObject(record.exports);
       record.status = "evaluated";
     } catch (error) {
-      if (record.status !== "evaluated") {
-        record.status = "linked";
+      if (
+        error instanceof VMError &&
+        (error.code === VMErrorCode.VMStepsExceededError ||
+          error.code === VMErrorCode.VMTimeoutError)
+      ) {
+        if (record.status !== "evaluated") {
+          record.status = "linked";
+          this.#refreshModuleRecordContext(record, record.context, new Set());
+        }
+      } else if (record.status !== "evaluated") {
+        record.status = "failed";
+        if (error instanceof VMError) {
+          record.failure = error;
+        }
       }
       throw error;
     }
@@ -1074,7 +1135,7 @@ export class VM {
     return this.#context;
   }
 
-  #createEvaluationContext(timeLimit: number | undefined): VMExecutionContext {
+  #createEvaluationContext(timeLimit: number | undefined, maxSteps: number | undefined): VMExecutionContext {
     const baseContext = this.#getContext();
     return createExecutionContext({
       globalEnvironment: baseContext.globalEnvironment,
@@ -1082,7 +1143,7 @@ export class VM {
       lexicalEnvironment: baseContext.globalEnvironment,
       thisValue: baseContext.globalObject,
       variableEnvironment: baseContext.globalEnvironment,
-      budget: { timeLimitMs: timeLimit },
+      budget: { timeLimitMs: timeLimit, maxSteps },
     });
   }
 
@@ -1090,6 +1151,7 @@ export class VM {
     this.#assertHandleUsable(generation);
     return this.#createEvaluationContext(
       normalizeTimeLimit(this.#executionRules.timeLimit),
+      normalizeMaxSteps(this.#executionRules.maxSteps),
     );
   }
 
@@ -1348,6 +1410,22 @@ function normalizeTimeLimit(value: number | undefined): number | undefined {
       VMErrorCode.VMRuntimeError,
       "executionRules.timeLimit must be a non-negative finite number.",
       { valueType: typeof value },
+    );
+  }
+
+  return value;
+}
+
+function normalizeMaxSteps(value: number | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Number.isInteger(value) || value < 0) {
+    throw new VMError(
+      VMErrorCode.VMRuntimeError,
+      "executionRules.maxSteps must be a non-negative integer.",
+      { valueType: typeof value, reason: "Literal", path: "maxSteps" },
     );
   }
 
