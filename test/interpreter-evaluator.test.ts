@@ -14,15 +14,9 @@ describe("interpreter evaluator", () => {
   test("evaluates expressions, declarations, assignments, and persisted globals", async () => {
     const context = createEvaluatorContext();
 
-    await expect(
-      evaluateSource("counter = 1; counter + 2", { context }),
-    ).resolves.toBe(3);
-    await expect(
-      evaluateSource("counter += 4; counter", { context }),
-    ).resolves.toBe(5);
-    await expect(
-      evaluateSource("let local = counter + 1; local", { context }),
-    ).resolves.toBe(6);
+    await expect(evaluateSource("counter = 1; counter + 2", { context })).resolves.toBe(3);
+    await expect(evaluateSource("counter += 4; counter", { context })).resolves.toBe(5);
+    await expect(evaluateSource("let local = counter + 1; local", { context })).resolves.toBe(6);
     await expect(evaluateSource("local", { context })).resolves.toBe(6);
   });
 
@@ -116,9 +110,7 @@ describe("interpreter evaluator", () => {
       ),
     ).resolves.toEqual({ value: 1, count: 1 });
 
-    await expect(evaluateSource("exported.count", { context })).resolves.toBe(
-      1,
-    );
+    await expect(evaluateSource("exported.count", { context })).resolves.toBe(1);
   });
 
   test("propagates guest getter throws as VM errors", async () => {
@@ -297,25 +289,18 @@ describe("interpreter evaluator", () => {
     ).resolves.toBe(2);
 
     expect(hostGlobal.nested.value).toBe(1);
-    await expect(
-      evaluateSource("hostGlobal.nested.value", { context }),
-    ).resolves.toBe(2);
+    await expect(evaluateSource("hostGlobal.nested.value", { context })).resolves.toBe(2);
   });
 
   test("exports evaluator results as reconstructed host copies", async () => {
     const context = createEvaluatorContext();
-    const result = await evaluateSource(
-      "guestState = { nested: { value: 1 } }; guestState",
-      {
-        context,
-      },
-    );
+    const result = await evaluateSource("guestState = { nested: { value: 1 } }; guestState", {
+      context,
+    });
 
     (result as { nested: { value: number } }).nested.value = 99;
 
-    await expect(
-      evaluateSource("guestState.nested.value", { context }),
-    ).resolves.toBe(1);
+    await expect(evaluateSource("guestState.nested.value", { context })).resolves.toBe(1);
   });
 
   test("uses VM object descriptors for guest members while exporting host clones", async () => {
@@ -929,9 +914,7 @@ describe("interpreter evaluator", () => {
   });
 
   test("keeps host escapes absent while allowing VM-owned reserved-looking keys", async () => {
-    await expect(evaluateSource("({}).constructor === Object")).resolves.toBe(
-      true,
-    );
+    await expect(evaluateSource("({}).constructor === Object")).resolves.toBe(true);
     await expect(evaluateSource("({}).__proto__")).resolves.toBeUndefined();
     await expect(
       evaluateSource("({ constructor: 1, __proto__: 2, prototype: 3 }).constructor"),
@@ -970,9 +953,7 @@ describe("interpreter evaluator", () => {
         ),
       ).resolves.toEqual([true, 42]);
       expect(hostGlobal[marker]).toBeUndefined();
-      await expect(evaluateSource(`this.${marker}`, { context })).resolves.toBe(
-        42,
-      );
+      await expect(evaluateSource(`this.${marker}`, { context })).resolves.toBe(42);
     } finally {
       delete hostGlobal[marker];
     }
@@ -1146,9 +1127,7 @@ describe("interpreter evaluator", () => {
   });
 
   test("returns cloned serializable values and rejects callable exports", async () => {
-    const value = await evaluateSource(
-      "({ nested: { value: 1 }, list: [1, 2] })",
-    );
+    const value = await evaluateSource("({ nested: { value: 1 }, list: [1, 2] })");
 
     expect(Object.getPrototypeOf(value as object)).toBeNull();
     expect(value).toEqual({ nested: { value: 1 }, list: [1, 2] });

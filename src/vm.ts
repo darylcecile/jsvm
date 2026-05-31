@@ -166,13 +166,7 @@ interface InstalledCapability {
 
 type ASTNode = { readonly type: string; readonly [key: string]: unknown };
 
-type VMModuleStatus =
-  | "new"
-  | "linking"
-  | "linked"
-  | "evaluating"
-  | "evaluated"
-  | "failed";
+type VMModuleStatus = "new" | "linking" | "linked" | "evaluating" | "evaluated" | "failed";
 
 interface VMModuleRecord {
   readonly specifier: string;
@@ -543,16 +537,9 @@ export class VM {
     }
 
     try {
-      const timeLimit = normalizeTimeLimit(
-        options.timeLimit ?? this.#executionRules.timeLimit,
-      );
-      const maxSteps = normalizeMaxSteps(
-        options.maxSteps ?? this.#executionRules.maxSteps,
-      );
-      const evaluationContext = this.#createEvaluationContext(
-        timeLimit,
-        maxSteps,
-      );
+      const timeLimit = normalizeTimeLimit(options.timeLimit ?? this.#executionRules.timeLimit);
+      const maxSteps = normalizeMaxSteps(options.maxSteps ?? this.#executionRules.maxSteps);
+      const evaluationContext = this.#createEvaluationContext(timeLimit, maxSteps);
       const program = parseProgram(source, { sourceType: options.sourceType });
 
       if (program.sourceType === "module") {
@@ -1997,38 +1984,29 @@ function toVMError(error: unknown): VMError {
     return new VMError(VMErrorCode.VMRuntimeError, error.message, { valueType: error.name });
   }
 
-  return new VMError(
-    VMErrorCode.VMRuntimeError,
-    `Guest evaluation failed: ${String(error)}`,
-    {
-      valueType: typeof error,
-    },
-  );
+  return new VMError(VMErrorCode.VMRuntimeError, `Guest evaluation failed: ${String(error)}`, {
+    valueType: typeof error,
+  });
 }
 
 function isVMErrorCode(value: unknown): value is VMErrorCode {
   return typeof value === "string" && (Object.values(VMErrorCode) as string[]).includes(value);
 }
 
-function isVMErrorRecord(error: unknown): error is {
-  readonly code: VMErrorCode;
-  readonly message: string;
-  readonly details?: unknown;
-} {
+function isVMErrorRecord(
+  error: unknown,
+): error is { readonly code: VMErrorCode; readonly message: string; readonly details?: unknown } {
   return (
     isPlainObject(error) &&
     isVMErrorCode(error.code) &&
     typeof error.message === "string" &&
-    (error.details === undefined ||
-      error.details === null ||
-      typeof error.details === "object")
+    (error.details === undefined || error.details === null || typeof error.details === "object")
   );
 }
 
 function isRetryableModuleFailure(error: VMError): boolean {
   return (
-    error.code === VMErrorCode.VMTimeoutError ||
-    error.code === VMErrorCode.VMStepsExceededError
+    error.code === VMErrorCode.VMTimeoutError || error.code === VMErrorCode.VMStepsExceededError
   );
 }
 

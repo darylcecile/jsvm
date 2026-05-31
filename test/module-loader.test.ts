@@ -85,9 +85,7 @@ describe("module loader", () => {
     expect(resolution.attributes).toEqual({ kind: "static", list: [1, undefined, "ok"] });
     expect(Object.isFrozen(resolution)).toBe(true);
     expect(Object.isFrozen(resolution.attributes as object)).toBe(true);
-    expect(
-      Object.isFrozen((resolution.attributes as { list: unknown[] }).list),
-    ).toBe(true);
+    expect(Object.isFrozen((resolution.attributes as { list: unknown[] }).list)).toBe(true);
 
     expect(source).toMatchObject({
       type: "module-source",
@@ -132,8 +130,7 @@ describe("module loader", () => {
     );
 
     const badMetadata = normalizeModuleLoader({
-      load: () =>
-        ({ source: "export {};", attributes: { live: new Date() } }) as never,
+      load: () => ({ source: "export {};", attributes: { live: new Date() } }) as never,
     });
     await expectRejectedVMError(
       badMetadata.load({ specifier: "./x.js" }),
@@ -197,11 +194,10 @@ describe("module loader", () => {
       },
       load(request) {
         if (request.specifier !== "entry") {
-          throw new VMError(
-            VMErrorCode.VMSecurityError,
-            "Unknown module specifier.",
-            { path: request.specifier, reason: "module loader denied" },
-          );
+          throw new VMError(VMErrorCode.VMSecurityError, "Unknown module specifier.", {
+            path: request.specifier,
+            reason: "module loader denied",
+          });
         }
         return "let i = 0; while (i < 10) { i += 1; } export const value = i;";
       },
@@ -396,9 +392,7 @@ describe("module loader", () => {
     const deniedLoader = normalizeModuleLoader({ resolve: ({ specifier }) => specifier });
     const deniedVM = new VM({ capabilities: { moduleLoader: deniedLoader } });
     await deniedVM.start();
-    const denied = await deniedVM.evaluate("import 'dep';", {
-      sourceType: "module",
-    });
+    const denied = await deniedVM.evaluate("import 'dep';", { sourceType: "module" });
     expect(denied.ok).toBe(false);
     if (!denied.ok) {
       expect(denied.error.code).toBe(VMErrorCode.VMSecurityError);
@@ -414,12 +408,9 @@ describe("module loader", () => {
       },
     });
     await missingExportVM.start();
-    const missing = await missingExportVM.evaluate(
-      "import { value } from 'dep';",
-      {
-        sourceType: "module",
-      },
-    );
+    const missing = await missingExportVM.evaluate("import { value } from 'dep';", {
+      sourceType: "module",
+    });
     expect(missing.ok).toBe(false);
     if (!missing.ok) {
       expect(missing.error.code).toBe(VMErrorCode.VMRuntimeError);
@@ -456,9 +447,7 @@ describe("module loader", () => {
       },
     });
     await cycleVM.start();
-    const cycle = await cycleVM.evaluate("import 'a';", {
-      sourceType: "module",
-    });
+    const cycle = await cycleVM.evaluate("import 'a';", { sourceType: "module" });
     expect(cycle.ok).toBe(false);
     if (!cycle.ok) {
       expect(cycle.error.code).toBe(VMErrorCode.VMRuntimeError);
