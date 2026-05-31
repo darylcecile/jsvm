@@ -9,6 +9,7 @@ import {
   type VMBoundaryValue,
   type VMCapability,
   type VMCapabilityHandler,
+  type VMErrorDetails,
   type VMSerializableValue,
   type VMSerializedValue,
 } from "./boundary";
@@ -40,7 +41,11 @@ import {
 } from "./module-loader";
 import type { NetworkRuleBuilder, NetworkRuleDefinition } from "./network-rule";
 import { createNetworkGlobals, performHostNetworkRequest } from "./networking";
-import { parseProgram, type VMParserSourceType, type VMProgram } from "./parser";
+import {
+  parseProgram,
+  type VMParserSourceType,
+  type VMProgram,
+} from "./parser";
 
 export interface VMExecutionRules {
   /**
@@ -51,6 +56,13 @@ export interface VMExecutionRules {
    * isolation guarantee.
    */
   readonly timeLimit?: number;
+
+  /**
+   * Best-effort step budget for interpreter checkpoints.
+   *
+   * This is a cooperative guardrail, not an instruction-accurate counter.
+   */
+  readonly maxSteps?: number;
 }
 
 export interface VMNumbersConfig {
@@ -89,11 +101,13 @@ export interface VMOptions {
 
 export interface VMEvaluateOptions {
   readonly timeLimit?: number;
+  readonly maxSteps?: number;
   readonly sourceType?: VMParserSourceType;
 }
 
 export interface VMImportOptions {
   readonly timeLimit?: number;
+  readonly maxSteps?: number;
 }
 
 export interface VMDangerousEvaluateUrlOptions extends VMEvaluateOptions {
@@ -105,7 +119,10 @@ export interface VMDangerousAPI {
     url: string | URL,
     options?: VMDangerousEvaluateUrlOptions,
   ) => Promise<VMResult>;
-  readonly eval: (url: string | URL, options?: VMDangerousEvaluateUrlOptions) => Promise<VMResult>;
+  readonly eval: (
+    url: string | URL,
+    options?: VMDangerousEvaluateUrlOptions,
+  ) => Promise<VMResult>;
 }
 
 export interface VMFunctionHandle {
@@ -131,7 +148,9 @@ export interface VMFailureResult {
   readonly error: VMError;
 }
 
-export type VMResult<T = VMSerializableValue> = VMSuccessResult<T> | VMFailureResult;
+export type VMResult<T = VMSerializableValue> =
+  | VMSuccessResult<T>
+  | VMFailureResult;
 
 export interface VMSnapshot {
   readonly version: 1;
@@ -156,7 +175,13 @@ interface InstalledCapability {
 
 type ASTNode = { readonly type: string; readonly [key: string]: unknown };
 
-type VMModuleStatus = "new" | "linking" | "linked" | "evaluating" | "evaluated";
+type VMModuleStatus =
+  | "new"
+  | "linking"
+  | "linked"
+  | "evaluating"
+  | "evaluated"
+  | "failed";
 
 interface VMModuleRecord {
   readonly specifier: string;
@@ -169,6 +194,7 @@ interface VMModuleRecord {
   parsed?: ParsedModuleRecord;
   exports?: Map<string, unknown>;
   namespace?: VMObject;
+  failure?: VMError;
 }
 
 interface ParsedModuleRecord {
@@ -264,7 +290,12 @@ class VMFunctionHandleImpl implements VMFunctionHandle {
     try {
       const context = this.#getContext();
       return success(
-        await invokeGuestCallableForHost(this.#callable, args, context, this.#thisValue),
+        await invokeGuestCallableForHost(
+          this.#callable,
+          args,
+          context,
+          this.#thisValue,
+        ),
       );
     } catch (error) {
       return failure(toVMError(error));
@@ -301,7 +332,9 @@ class VMModuleHandleImpl implements VMModuleHandle {
   async get(name: string): Promise<VMResult> {
     try {
       const context = this.#getContext();
-      return success(await exportGuestValueForHost(this.#getExportValue(name), context));
+      return success(
+        await exportGuestValueForHost(this.#getExportValue(name), context),
+      );
     } catch (error) {
       return failure(toVMError(error));
     }
@@ -313,10 +346,14 @@ class VMModuleHandleImpl implements VMModuleHandle {
       const value = this.#getExportValue(name);
       if (!isGuestCallableValue(value)) {
         return failure(
-          new VMError(VMErrorCode.VMRuntimeError, `Module export "${name}" is not callable.`, {
-            path: name,
-            reason: "not callable",
-          }),
+          new VMError(
+            VMErrorCode.VMRuntimeError,
+            `Module export "${name}" is not callable.`,
+            {
+              path: name,
+              reason: "not callable",
+            },
+          ),
         );
       }
 
@@ -363,18 +400,23 @@ export class VM {
       ...options.capabilities?.executionRules,
       ...options.executionRules,
     });
-    this.#numbers = Object.freeze({ ...options.capabilities?.numbers, ...options.numbers });
+    this.#numbers = Object.freeze({
+      ...options.capabilities?.numbers,
+      ...options.numbers,
+    });
     this.#networkingRules = Object.freeze(
       (options.capabilities?.networkingRules ?? []).map(normalizeNetworkRule),
     );
     this.#moduleLoader = normalizeModuleLoader(options.capabilities?.moduleLoader);
     this.#dynamicCode = options.capabilities?.dynamicCode === true;
     this.#initialGlobals = options.globals ?? {};
-    this.import = (specifier, importOptions = {}) => this.#importModule(specifier, importOptions);
+    this.import = (specifier, importOptions = {}) =>
+      this.#importModule(specifier, importOptions);
     this.dangerously = Object.freeze({
       evaluateUrl: (url: string | URL, evaluateOptions = {}) =>
         this.#evaluateUrl(url, evaluateOptions),
-      eval: (url: string | URL, evaluateOptions = {}) => this.#evaluateUrl(url, evaluateOptions),
+      eval: (url: string | URL, evaluateOptions = {}) =>
+        this.#evaluateUrl(url, evaluateOptions),
     });
   }
 
@@ -442,7 +484,11 @@ export class VM {
       throw new VMError(
         VMErrorCode.VMSnapshotUnsupported,
         "Cannot snapshot a VM with host capabilities or callable globals.",
-        { reason: this.#installedCapabilities.map((installed) => installed.name).join(", ") },
+        {
+          reason: this.#installedCapabilities
+            .map((installed) => installed.name)
+            .join(", "),
+        },
       );
     }
 
@@ -497,10 +543,14 @@ export class VM {
       const value = context.globalEnvironment.get(name);
       if (!isGuestCallableValue(value)) {
         return failure(
-          new VMError(VMErrorCode.VMRuntimeError, `Global "${name}" is not callable.`, {
-            path: name,
-            reason: "not callable",
-          }),
+          new VMError(
+            VMErrorCode.VMRuntimeError,
+            `Global "${name}" is not callable.`,
+            {
+              path: name,
+              reason: "not callable",
+            },
+          ),
         );
       }
 
@@ -510,11 +560,17 @@ export class VM {
     }
   }
 
-  async eval(source: string, options: VMEvaluateOptions = {}): Promise<VMResult> {
+  async eval(
+    source: string,
+    options: VMEvaluateOptions = {},
+  ): Promise<VMResult> {
     return this.evaluate(source, options);
   }
 
-  async evaluate(source: string, options: VMEvaluateOptions = {}): Promise<VMResult> {
+  async evaluate(
+    source: string,
+    options: VMEvaluateOptions = {},
+  ): Promise<VMResult> {
     this.#assertUsable();
 
     if (typeof source !== "string") {
@@ -526,8 +582,16 @@ export class VM {
     }
 
     try {
-      const timeLimit = normalizeTimeLimit(options.timeLimit ?? this.#executionRules.timeLimit);
-      const evaluationContext = this.#createEvaluationContext(timeLimit);
+      const timeLimit = normalizeTimeLimit(
+        options.timeLimit ?? this.#executionRules.timeLimit,
+      );
+      const maxSteps = normalizeMaxSteps(
+        options.maxSteps ?? this.#executionRules.maxSteps,
+      );
+      const evaluationContext = this.#createEvaluationContext(
+        timeLimit,
+        maxSteps,
+      );
       const program = parseProgram(source, { sourceType: options.sourceType });
 
       if (program.sourceType === "module") {
@@ -580,14 +644,18 @@ export class VM {
     }
 
     if (isVMCapability(value)) {
-      return this.#installCapability(path, (...args) => invokeBoundaryCapability(value, args));
+      return this.#installCapability(path, (...args) =>
+        invokeBoundaryCapability(value, args),
+      );
     }
 
     if (
       (Array.isArray(value) || isPlainObject(value)) &&
       !containsGlobalCapability(value, new WeakSet<object>())
     ) {
-      return serializeAndReconstructBoundaryValue(value, { allowCapabilities: false });
+      return serializeAndReconstructBoundaryValue(value, {
+        allowCapabilities: false,
+      });
     }
 
     if (Array.isArray(value)) {
@@ -665,7 +733,10 @@ export class VM {
           );
         }
 
-        output[key] = this.#prepareGlobalValue(descriptor.value as VMGlobalValue, `${path}.${key}`);
+        output[key] = this.#prepareGlobalValue(
+          descriptor.value as VMGlobalValue,
+          `${path}.${key}`,
+        );
       }
       return output;
     }
@@ -691,7 +762,10 @@ export class VM {
     await this.#evaluateModuleRecord(entry, graph, []);
 
     return reconstructBoundaryValue(
-      await serializeGuestValueForSnapshot(this.#getModuleNamespace(entry), entry.context),
+      await serializeGuestValueForSnapshot(
+        this.#getModuleNamespace(entry),
+        entry.context,
+      ),
     );
   }
 
@@ -704,15 +778,20 @@ export class VM {
 
       if (typeof specifier !== "string" || specifier.length === 0) {
         return failure(
-          new VMError(VMErrorCode.VMRuntimeError, "Module specifier must be a non-empty string.", {
-            path: "specifier",
-            reason: "invalid module specifier",
-          }),
+          new VMError(
+            VMErrorCode.VMRuntimeError,
+            "Module specifier must be a non-empty string.",
+            {
+              path: "specifier",
+              reason: "invalid module specifier",
+            },
+          ),
         );
       }
 
       const timeLimit = normalizeTimeLimit(options.timeLimit ?? this.#executionRules.timeLimit);
-      const rootContext = this.#createEvaluationContext(timeLimit);
+      const maxSteps = normalizeMaxSteps(options.maxSteps ?? this.#executionRules.maxSteps);
+      const rootContext = this.#createEvaluationContext(timeLimit, maxSteps);
       const record = await this.#loadRootModule(specifier, rootContext);
       await this.#evaluateModuleRecord(record, this.#moduleGraph, []);
 
@@ -722,7 +801,10 @@ export class VM {
     }
   }
 
-  async #evaluateUrl(url: string | URL, options: VMDangerousEvaluateUrlOptions): Promise<VMResult> {
+  async #evaluateUrl(
+    url: string | URL,
+    options: VMDangerousEvaluateUrlOptions,
+  ): Promise<VMResult> {
     try {
       this.#assertUsable();
 
@@ -745,10 +827,14 @@ export class VM {
 
       if (maxBytes !== undefined && utf8ByteLength(response.bodyText) > maxBytes) {
         return failure(
-          new VMError(VMErrorCode.VMSecurityError, "URL evaluation response exceeds maxBytes.", {
-            path: href,
-            reason: "max bytes exceeded",
-          }),
+          new VMError(
+            VMErrorCode.VMSecurityError,
+            "URL evaluation response exceeds maxBytes.",
+            {
+              path: href,
+              reason: "max bytes exceeded",
+            },
+          ),
         );
       }
 
@@ -775,7 +861,12 @@ export class VM {
       attributes: resolution.attributes,
       specifier: resolution.specifier,
     });
-    return this.#createLoadedModuleRecord(source, resolution, rootContext, this.#moduleGraph);
+    return this.#createLoadedModuleRecord(
+      source,
+      resolution,
+      rootContext,
+      this.#moduleGraph,
+    );
   }
 
   #createModuleRecord(
@@ -812,6 +903,16 @@ export class VM {
   ): Promise<void> {
     if (record.status === "evaluated") {
       return;
+    }
+
+    if (record.status === "failed") {
+      throw (
+        record.failure ??
+        new VMError(VMErrorCode.VMRuntimeError, "Module evaluation failed.", {
+          path: record.specifier,
+          reason: "module evaluation failed",
+        })
+      );
     }
 
     if (record.status === "evaluating" || record.status === "linking") {
@@ -853,7 +954,9 @@ export class VM {
       }
 
       this.#installModuleImports(record, parsed, graph);
-      await executeProgramForSideEffects(parsed.evaluationProgram, { context: record.context });
+      await executeProgramForSideEffects(parsed.evaluationProgram, {
+        context: record.context,
+      });
       record.exports = this.#collectModuleExports(record, parsed, graph);
       record.namespace = createModuleNamespaceObject(record.exports);
       record.status = "evaluated";
@@ -907,7 +1010,12 @@ export class VM {
       sourceFile: source.specifier,
       sourceType: "module",
     });
-    const record = this.#createModuleRecord(source.specifier, source.source, program, rootContext);
+    const record = this.#createModuleRecord(
+      source.specifier,
+      source.source,
+      program,
+      rootContext,
+    );
     graph.set(record.specifier, record);
     return record;
   }
@@ -1009,7 +1117,10 @@ export class VM {
     return this.#context;
   }
 
-  #createEvaluationContext(timeLimit: number | undefined): VMExecutionContext {
+  #createEvaluationContext(
+    timeLimit: number | undefined,
+    maxSteps: number | undefined,
+  ): VMExecutionContext {
     const baseContext = this.#getContext();
     return createExecutionContext({
       globalEnvironment: baseContext.globalEnvironment,
@@ -1017,13 +1128,16 @@ export class VM {
       lexicalEnvironment: baseContext.globalEnvironment,
       thisValue: baseContext.globalObject,
       variableEnvironment: baseContext.globalEnvironment,
-      budget: { timeLimitMs: timeLimit },
+      budget: { timeLimitMs: timeLimit, maxSteps },
     });
   }
 
   #createHandleContext(generation: number): VMExecutionContext {
     this.#assertHandleUsable(generation);
-    return this.#createEvaluationContext(normalizeTimeLimit(this.#executionRules.timeLimit));
+    return this.#createEvaluationContext(
+      normalizeTimeLimit(this.#executionRules.timeLimit),
+      normalizeMaxSteps(this.#executionRules.maxSteps),
+    );
   }
 
   #assertHandleUsable(generation: number): void {
@@ -1054,7 +1168,10 @@ export class VM {
     );
   }
 
-  #createModuleHandle(record: VMModuleRecord, generation: number): VMModuleHandle {
+  #createModuleHandle(
+    record: VMModuleRecord,
+    generation: number,
+  ): VMModuleHandle {
     const exports = getModuleExports(record);
     const exportNames = [...exports.keys()].sort();
 
@@ -1065,7 +1182,11 @@ export class VM {
         () => this.#createHandleContext(generation),
         (name) => getRequiredModuleExport(record, name, "<host>"),
         (name, value) =>
-          this.#createFunctionHandle(`${record.specifier}.${name}`, value, generation),
+          this.#createFunctionHandle(
+            `${record.specifier}.${name}`,
+            value,
+            generation,
+          ),
       ),
     );
   }
@@ -1106,7 +1227,10 @@ function installBaseGlobals(
 }
 
 function createSafeMath(randomSeed: string | number | undefined): object {
-  const rng = randomSeed === undefined ? () => Math.random() : createSeededRandom(randomSeed);
+  const rng =
+    randomSeed === undefined
+      ? () => Math.random()
+      : createSeededRandom(randomSeed);
   const safeMath = Object.create(null) as Record<string, unknown>;
 
   for (const key of Object.getOwnPropertyNames(Math)) {
@@ -1125,7 +1249,9 @@ function createSafeMath(randomSeed: string | number | undefined): object {
         value: createHostCallable(
           key,
           (...args) =>
-            (value as (...nextArgs: number[]) => number)(...args.map((arg) => Number(arg))),
+            (value as (...nextArgs: number[]) => number)(
+              ...args.map((arg) => Number(arg)),
+            ),
           { id: `Math.${key}`, arity: value.length },
         ),
         writable: true,
@@ -1155,7 +1281,9 @@ function createSafeDate(dateNow: number | undefined): object {
   return Object.freeze(
     Object.assign(Object.create(null), {
       now: createHostCallable("Date.now", () => now()),
-      parse: createHostCallable("Date.parse", (value) => Date.parse(String(value))),
+      parse: createHostCallable("Date.parse", (value) =>
+        Date.parse(String(value)),
+      ),
       UTC: createHostCallable("Date.UTC", (...args) => dateUTC(args)),
     }),
   );
@@ -1180,7 +1308,9 @@ function createSafeJSON(): object {
         "JSON.parse",
         (source) => JSON.parse(String(source)) as VMSerializableValue,
       ),
-      stringify: createHostCallable("JSON.stringify", (value) => JSON.stringify(value)),
+      stringify: createHostCallable("JSON.stringify", (value) =>
+        JSON.stringify(value),
+      ),
     }),
   );
 }
@@ -1188,7 +1318,9 @@ function createSafeJSON(): object {
 function createSafeObject(): object {
   return Object.freeze(
     Object.assign(Object.create(null), {
-      keys: createHostCallable("Object.keys", (value) => Object.keys(Object(value))),
+      keys: createHostCallable("Object.keys", (value) =>
+        Object.keys(Object(value)),
+      ),
       values: createHostCallable(
         "Object.values",
         (value) => Object.values(Object(value)) as VMSerializableValue[],
@@ -1200,18 +1332,17 @@ function createSafeObject(): object {
       fromEntries: createHostCallable(
         "Object.fromEntries",
         (value) =>
-          Object.fromEntries(value as Iterable<readonly [PropertyKey, unknown]>) as Record<
-            string,
-            VMSerializableValue
-          >,
+          Object.fromEntries(
+            value as Iterable<readonly [PropertyKey, unknown]>,
+          ) as Record<string, VMSerializableValue>,
       ),
       assign: createHostCallable(
         "Object.assign",
         (target, ...sources) =>
-          Object.assign(Object(target), ...sources.map((source) => Object(source))) as Record<
-            string,
-            VMSerializableValue
-          >,
+          Object.assign(
+            Object(target),
+            ...sources.map((source) => Object(source)),
+          ) as Record<string, VMSerializableValue>,
       ),
     }),
   );
@@ -1220,10 +1351,13 @@ function createSafeObject(): object {
 function createSafeArray(): object {
   return Object.freeze(
     Object.assign(Object.create(null), {
-      isArray: createHostCallable("Array.isArray", (value) => Array.isArray(value)),
+      isArray: createHostCallable("Array.isArray", (value) =>
+        Array.isArray(value),
+      ),
       from: createHostCallable(
         "Array.from",
-        (value) => Array.from(value as Iterable<unknown>) as VMSerializableValue[],
+        (value) =>
+          Array.from(value as Iterable<unknown>) as VMSerializableValue[],
       ),
       of: createHostCallable("Array.of", (...values) => values),
     }),
@@ -1253,6 +1387,22 @@ function normalizeMaxBytes(value: number | undefined): number | undefined {
       VMErrorCode.VMSecurityError,
       "URL evaluation maxBytes must be a non-negative safe integer.",
       { path: "maxBytes", reason: "invalid max bytes" },
+    );
+  }
+
+  return value;
+}
+
+function normalizeMaxSteps(value: number | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new VMError(
+      VMErrorCode.VMRuntimeError,
+      "executionRules.maxSteps must be a non-negative safe integer.",
+      { valueType: typeof value, reason: "invalid max steps", path: "maxSteps" },
     );
   }
 
@@ -1345,13 +1495,19 @@ function assertValidSnapshot(snapshot: VMSnapshot): void {
     !isPlainObject(snapshot.options) ||
     !isPlainObject(snapshot.options.capabilities)
   ) {
-    throw new VMError(VMErrorCode.VMSnapshotUnsupported, "Invalid VM snapshot.");
+    throw new VMError(
+      VMErrorCode.VMSnapshotUnsupported,
+      "Invalid VM snapshot.",
+    );
   }
 }
 
 function assertSafeGlobalName(name: string): void {
   if (!/^[A-Za-z_$][\w$]*$/.test(name)) {
-    throw new VMError(VMErrorCode.VMSecurityError, `Invalid VM global name "${name}".`);
+    throw new VMError(
+      VMErrorCode.VMSecurityError,
+      `Invalid VM global name "${name}".`,
+    );
   }
 }
 
@@ -1398,8 +1554,13 @@ function containsGlobalCapability(value: unknown, seen: WeakSet<object>): boolea
   }
 
   if (isPlainObject(value)) {
-    for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
-      if ("value" in descriptor && containsGlobalCapability(descriptor.value, seen)) {
+    for (const descriptor of Object.values(
+      Object.getOwnPropertyDescriptors(value),
+    )) {
+      if (
+        "value" in descriptor &&
+        containsGlobalCapability(descriptor.value, seen)
+      ) {
         return true;
       }
     }
@@ -1450,7 +1611,10 @@ function parseModuleRecord(program: VMProgram): ParsedModuleRecord {
       }
       case "ExportDefaultDeclaration": {
         const declaration = getNodeProperty(statement, "declaration");
-        const defaultExport = transformDefaultExportDeclaration(declaration, usedTopLevelNames);
+        const defaultExport = transformDefaultExportDeclaration(
+          declaration,
+          usedTopLevelNames,
+        );
         evaluationBody.push(defaultExport.statement);
         addLocalExport("default", defaultExport.localName);
         break;
@@ -1498,7 +1662,10 @@ function parseModuleRecord(program: VMProgram): ParsedModuleRecord {
           specifier: source,
         });
         if (exported !== null && exported !== undefined) {
-          assertUniqueExplicitExport(explicitExportNames, getModuleExportName(asASTNode(exported)));
+          assertUniqueExplicitExport(
+            explicitExportNames,
+            getModuleExportName(asASTNode(exported)),
+          );
         }
         break;
       }
@@ -1554,11 +1721,15 @@ function transformDefaultExportDeclaration(
   usedTopLevelNames: Set<string>,
 ): { readonly localName: string; readonly statement: ASTNode } {
   if (
-    (declaration.type === "FunctionDeclaration" || declaration.type === "ClassDeclaration") &&
+    (declaration.type === "FunctionDeclaration" ||
+      declaration.type === "ClassDeclaration") &&
     declaration.id !== null &&
     declaration.id !== undefined
   ) {
-    return { localName: getIdentifierName(asASTNode(declaration.id)), statement: declaration };
+    return {
+      localName: getIdentifierName(asASTNode(declaration.id)),
+      statement: declaration,
+    };
   }
 
   const localName = allocateModuleTemporaryName(usedTopLevelNames);
@@ -1573,7 +1744,11 @@ function transformDefaultExportDeclaration(
     localName,
     statement: {
       declarations: [
-        { id: { name: localName, type: "Identifier" }, init, type: "VariableDeclarator" },
+        {
+          id: { name: localName, type: "Identifier" },
+          init,
+          type: "VariableDeclarator",
+        },
       ],
       kind: "const",
       type: "VariableDeclaration",
@@ -1606,7 +1781,8 @@ function collectTopLevelModuleNames(body: readonly ASTNode[]): Set<string> {
     if (statement.type === "ExportDefaultDeclaration") {
       const declaration = getNodeProperty(statement, "declaration");
       if (
-        (declaration.type === "FunctionDeclaration" || declaration.type === "ClassDeclaration") &&
+        (declaration.type === "FunctionDeclaration" ||
+          declaration.type === "ClassDeclaration") &&
         declaration.id !== null &&
         declaration.id !== undefined
       ) {
@@ -1626,8 +1802,9 @@ function collectTopLevelModuleNames(body: readonly ASTNode[]): Set<string> {
 function collectDeclarationBoundNames(declaration: ASTNode): readonly string[] {
   switch (declaration.type) {
     case "VariableDeclaration":
-      return getNodeArrayProperty(declaration, "declarations").flatMap((declarator) =>
-        collectPatternBoundNames(getNodeProperty(declarator, "id")),
+      return getNodeArrayProperty(declaration, "declarations").flatMap(
+        (declarator) =>
+          collectPatternBoundNames(getNodeProperty(declarator, "id")),
       );
     case "FunctionDeclaration":
     case "ClassDeclaration":
@@ -1680,7 +1857,9 @@ function getProgramBody(program: VMProgram): readonly ASTNode[] {
   const body = (program as unknown as { readonly body?: unknown }).body;
 
   if (!Array.isArray(body)) {
-    throw moduleRuntimeError("Module program must contain a body.", { reason: "invalid ast" });
+    throw moduleRuntimeError("Module program must contain a body.", {
+      reason: "invalid ast",
+    });
   }
 
   return body.map(asASTNode);
@@ -1773,7 +1952,10 @@ function createModuleNamespaceObject(exports: ReadonlyMap<string, unknown>): VMO
   return namespace;
 }
 
-function assertUniqueExplicitExport(seen: Set<string>, exportName: string): void {
+function assertUniqueExplicitExport(
+  seen: Set<string>,
+  exportName: string,
+): void {
   if (seen.has(exportName)) {
     throw moduleRuntimeError(`Duplicate module export "${exportName}".`, {
       path: exportName,
@@ -1832,7 +2014,10 @@ function getModuleExportName(node: ASTNode): string {
 
 function getIdentifierName(node: ASTNode): string {
   if (node.type !== "Identifier" || typeof node.name !== "string") {
-    throw moduleRuntimeError("Expected an identifier.", { path: node.type, reason: "invalid ast" });
+    throw moduleRuntimeError("Expected an identifier.", {
+      path: node.type,
+      reason: "invalid ast",
+    });
   }
 
   return node.name;
@@ -1864,7 +2049,9 @@ function asASTNode(value: unknown): ASTNode {
     value === null ||
     typeof (value as { readonly type?: unknown }).type !== "string"
   ) {
-    throw moduleRuntimeError("Expected an AST node.", { reason: "invalid ast" });
+    throw moduleRuntimeError("Expected an AST node.", {
+      reason: "invalid ast",
+    });
   }
 
   return value as ASTNode;
@@ -1928,12 +2115,56 @@ function toVMError(error: unknown): VMError {
   }
 
   if (error instanceof Error) {
-    return new VMError(VMErrorCode.VMRuntimeError, error.message, { valueType: error.name });
+    return new VMError(VMErrorCode.VMRuntimeError, error.message, {
+      valueType: error.name,
+    });
   }
 
-  return new VMError(VMErrorCode.VMRuntimeError, `Guest evaluation failed: ${String(error)}`, {
-    valueType: typeof error,
-  });
+  return new VMError(
+    VMErrorCode.VMRuntimeError,
+    `Guest evaluation failed: ${String(error)}`,
+    {
+      valueType: typeof error,
+    },
+  );
+}
+
+function isVMErrorCode(value: unknown): value is VMErrorCode {
+  return typeof value === "string" && (Object.values(VMErrorCode) as string[]).includes(value);
+}
+
+function isVMErrorRecord(error: unknown): error is {
+  readonly code: VMErrorCode;
+  readonly message: string;
+  readonly details?: unknown;
+} {
+  return (
+    isPlainObject(error) &&
+    isVMErrorCode(error.code) &&
+    typeof error.message === "string" &&
+    (error.details === undefined ||
+      error.details === null ||
+      typeof error.details === "object")
+  );
+}
+
+function isRetryableModuleFailure(error: VMError): boolean {
+  return (
+    error.code === VMErrorCode.VMTimeoutError ||
+    error.code === VMErrorCode.VMStepsExceededError
+  );
+}
+
+function normalizeVMErrorDetails(details: unknown): VMErrorDetails {
+  if (details === undefined || details === null) {
+    return {};
+  }
+
+  if (isPlainObject(details)) {
+    return details;
+  }
+
+  return { reason: String(details) };
 }
 
 function createSeededRandom(seed: string | number): () => number {
