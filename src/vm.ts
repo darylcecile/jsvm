@@ -18,8 +18,8 @@ import {
   createDynamicCodeGlobals,
   createEvaluatorContext,
   evaluateProgram,
-  exportGuestValueForHost,
   executeProgramForSideEffects,
+  exportGuestValueForHost,
   invokeGuestCallableForHost,
   isGuestCallableValue,
   serializeGuestValueForSnapshot,
@@ -34,8 +34,8 @@ import { createExecutionContext, type VMExecutionContext } from "./interpreter/r
 import { createHostCallable, type VMGuestCallable } from "./interpreter/values";
 import {
   normalizeModuleLoader,
-  type VMModuleResolution,
   type VMModuleLoader,
+  type VMModuleResolution,
   type VMModuleSource,
   type VMNormalizedModuleLoader,
 } from "./module-loader";
@@ -961,10 +961,18 @@ export class VM {
       record.namespace = createModuleNamespaceObject(record.exports);
       record.status = "evaluated";
     } catch (error) {
-      if (record.status !== "evaluated") {
+      const failure = toVMError(error);
+
+      if (isRetryableModuleFailure(failure)) {
+        graph.delete(record.specifier);
         record.status = "linked";
+        record.failure = undefined;
+      } else {
+        record.status = "failed";
+        record.failure = failure;
       }
-      throw error;
+
+      throw failure;
     }
   }
 

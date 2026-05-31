@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+﻿import { describe, expect, test } from "bun:test";
 
 import { VMError, VMErrorCode } from "../src/boundary";
 import { createEvaluatorContext, evaluateSource } from "../src/interpreter/evaluator";
@@ -32,9 +32,6 @@ describe("interpreter evaluator", () => {
     await expect(
       evaluateSource(
         `
-    await expect(
-      evaluateSource(
-        `
       let total = 0;
       for (let i = 0; i < 6; i++) {
         if (i === 3) continue;
@@ -45,10 +42,6 @@ describe("interpreter evaluator", () => {
         if (total === 18) break;
       }
       total;
-    `,
-        { context },
-      ),
-    ).resolves.toBe(18);
     `,
         { context },
       ),
@@ -64,13 +57,9 @@ describe("interpreter evaluator", () => {
   test("supports guest functions and arrow functions", async () => {
     await expect(
       evaluateSource(`
-    await expect(
-      evaluateSource(`
       function add(a, b) { return a + b; }
       const double = (value) => value * 2;
       add(2, 3) + double(4);
-    `),
-    ).resolves.toBe(13);
     `),
     ).resolves.toBe(13);
   });
@@ -84,21 +73,15 @@ describe("interpreter evaluator", () => {
 
     await expect(
       evaluateSource(`
-    await expect(
-      evaluateSource(`
       const values = [0, ...[1, 2], 3];
       const base = { a: 1, b: 2 };
       const tools = { ...base, triple(value) { return value * 3; } };
       tools.triple(values[1] + values[3]) + tools.a + tools.b;
     `),
     ).resolves.toBe(15);
-    `),
-    ).resolves.toBe(15);
   });
 
   test("supports guest object getter and setter accessors", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const object = {
@@ -117,9 +100,6 @@ describe("interpreter evaluator", () => {
   test("invokes enumerable guest getters during evaluator result export", async () => {
     const context = createEvaluatorContext();
 
-    await expect(
-      evaluateSource(
-        `
     await expect(
       evaluateSource(
         `
@@ -144,8 +124,6 @@ describe("interpreter evaluator", () => {
   test("propagates guest getter throws as VM errors", async () => {
     await expect(
       evaluateSource(`
-    await expect(
-      evaluateSource(`
       const object = {
         get value() {
           throw "boom";
@@ -154,11 +132,7 @@ describe("interpreter evaluator", () => {
       object.value;
     `),
     ).rejects.toMatchObject({ code: VMErrorCode.VMRuntimeError });
-    `),
-    ).rejects.toMatchObject({ code: VMErrorCode.VMRuntimeError });
 
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       ({
@@ -168,13 +142,9 @@ describe("interpreter evaluator", () => {
       });
     `),
     ).rejects.toMatchObject({ code: VMErrorCode.VMRuntimeError });
-    `),
-    ).rejects.toMatchObject({ code: VMErrorCode.VMRuntimeError });
   });
 
   test("supports destructuring, default values, rest bindings, and rest parameters", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const source = { a: 1, b: { c: 2 }, d: 3 };
@@ -201,8 +171,6 @@ describe("interpreter evaluator", () => {
       ({ a, missing, c, rest, first, restD, third, tail, collected: collect({ y: [8, 9, 10] }, void 0, "extra"), loop });
     `),
     ).resolves.toEqual({
-    `),
-    ).resolves.toEqual({
       a: 1,
       missing: 4,
       c: 2,
@@ -217,8 +185,6 @@ describe("interpreter evaluator", () => {
   });
 
   test("supports optional chaining for VM property access and calls", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const none = null;
@@ -239,8 +205,6 @@ describe("interpreter evaluator", () => {
       ({ missing: none?.value, skippedMember, skippedCall, skippedOptionalCall, hits, called, nestedMissing: object.nested?.missing?.value });
     `),
     ).resolves.toEqual({
-    `),
-    ).resolves.toEqual({
       missing: undefined,
       skippedMember: undefined,
       skippedCall: undefined,
@@ -252,8 +216,6 @@ describe("interpreter evaluator", () => {
   });
 
   test("supports additional control flow statements", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       let total = 0;
@@ -292,8 +254,6 @@ describe("interpreter evaluator", () => {
       total;
     `),
     ).resolves.toBe(26);
-    `),
-    ).resolves.toBe(26);
   });
 
   test("calls host capabilities through cloned boundary values", async () => {
@@ -314,9 +274,6 @@ describe("interpreter evaluator", () => {
     await expect(
       evaluateSource(
         `
-    await expect(
-      evaluateSource(
-        `
       (async () => {
         let guestArg = { nested: { value: 1 } };
         let guestResult = await host.mutateAndReturn(guestArg);
@@ -327,14 +284,7 @@ describe("interpreter evaluator", () => {
         { context },
       ),
     ).resolves.toEqual([1, 11]);
-    `,
-        { context },
-      ),
-    ).resolves.toEqual([1, 11]);
-
-    expect(
-      (observedArgs[0] as { nested: { value: number } }).nested.value,
-    ).toBe(99);
+    expect((observedArgs[0] as { nested: { value: number } }).nested.value).toBe(99);
     expect(hostResult.nested.value).toBe(10);
   });
 
@@ -370,7 +320,6 @@ describe("interpreter evaluator", () => {
 
   test("uses VM object descriptors for guest members while exporting host clones", async () => {
     const value = (await evaluateSource(`
-    const value = (await evaluateSource(`
       const object = { kind: "guest", nested: { value: 1 } };
       const array = [1, 2, 3];
 
@@ -393,8 +342,6 @@ describe("interpreter evaluator", () => {
   });
 
   test("supports VM-owned built-in prototype methods without host prototype leakage", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const values = [1, 2, 3, 4];
@@ -432,8 +379,6 @@ describe("interpreter evaluator", () => {
       ];
     `),
     ).resolves.toEqual([
-    `),
-    ).resolves.toEqual([
       true,
       [6, 8],
       14,
@@ -453,8 +398,6 @@ describe("interpreter evaluator", () => {
   });
 
   test("supports VM-owned String, RegExp, Date, Map, and Set operations", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const regexp = new RegExp("a+", "g");
@@ -490,8 +433,6 @@ describe("interpreter evaluator", () => {
       ];
     `),
     ).resolves.toEqual([
-    `),
-    ).resolves.toEqual([
       true,
       "ell",
       "B",
@@ -514,8 +455,6 @@ describe("interpreter evaluator", () => {
   });
 
   test("supports VM-owned Error constructors and catchable TypeErrors", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const plain = Error("plain");
@@ -555,8 +494,6 @@ describe("interpreter evaluator", () => {
   test("supports isNaN, isFinite, and Symbol.toPrimitive coercion", async () => {
     await expect(
       evaluateSource(`
-    await expect(
-      evaluateSource(`
       const numberLike = {
         [Symbol.toPrimitive](hint) {
           return hint === "number" ? "7" : "not-number";
@@ -580,13 +517,9 @@ describe("interpreter evaluator", () => {
       ];
     `),
     ).resolves.toEqual([true, false, true, true, false, true, 7, 7]);
-    `),
-    ).resolves.toEqual([true, false, true, true, false, true, 7, 7]);
   });
 
   test("uses ordinary ToPrimitive order for addition", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const log = [];
@@ -614,8 +547,6 @@ describe("interpreter evaluator", () => {
   });
 
   test("supports Symbol.toPrimitive result validation and propagation", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const primitive = {
@@ -648,13 +579,9 @@ describe("interpreter evaluator", () => {
       [primitive + "!", badName, caught];
     `),
     ).resolves.toEqual(["ok!", "TypeError", "coercion throw"]);
-    `),
-    ).resolves.toEqual(["ok!", "TypeError", "coercion throw"]);
   });
 
   test("supports BigInt addition coercion and mixed numeric TypeErrors", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const wrapped = Object(2n);
@@ -675,13 +602,9 @@ describe("interpreter evaluator", () => {
       [1n + 2n, wrapped + 1n, 1n + viaValueOf, viaToString + 1n, "" + 5n, mixedName, unaryName];
     `),
     ).resolves.toEqual([3n, 3n, 4n, 5n, "5", "TypeError", "TypeError"]);
-    `),
-    ).resolves.toEqual([3n, 3n, 4n, 5n, "5", "TypeError", "TypeError"]);
   });
 
   test("supports VM-local Symbol identity, registry, well-known symbols, and symbol keys", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const localA = Symbol("local");
@@ -713,8 +636,6 @@ describe("interpreter evaluator", () => {
       });
     `),
     ).resolves.toEqual({
-    `),
-    ).resolves.toEqual({
       constructName: "TypeError",
       hasStringKey: true,
       hasSymbolKey: true,
@@ -736,8 +657,6 @@ describe("interpreter evaluator", () => {
 
     await expect(
       evaluateSource(`
-    await expect(
-      evaluateSource(`
       const key = Symbol("secret");
       ({ [key]: 1, plain: 2 });
     `),
@@ -745,8 +664,6 @@ describe("interpreter evaluator", () => {
   });
 
   test("supports VM-owned Reflect object operations", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const proto = { inherited: 2 };
@@ -789,8 +706,6 @@ describe("interpreter evaluator", () => {
       });
     `),
     ).resolves.toEqual({
-    `),
-    ).resolves.toEqual({
       before: 2,
       changedPrototype: false,
       defined: true,
@@ -807,8 +722,6 @@ describe("interpreter evaluator", () => {
   });
 
   test("routes VM proxy object operations through guest traps", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const log = [];
@@ -856,8 +769,6 @@ describe("interpreter evaluator", () => {
       ({ keys, values, log });
     `),
     ).resolves.toEqual({
-    `),
-    ).resolves.toEqual({
       keys: ["a", "b", "virtual"],
       log: [
         "set:b:2:true",
@@ -877,8 +788,6 @@ describe("interpreter evaluator", () => {
   });
 
   test("preserves Reflect receiver behavior through proxy traps", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const proto = {
@@ -909,8 +818,6 @@ describe("interpreter evaluator", () => {
   test("enforces proxy invariants for fixed properties, keys, prototypes, and extensions", async () => {
     await expect(
       evaluateSource(`
-    await expect(
-      evaluateSource(`
       const target = {};
       Object.defineProperty(target, "fixed", {
         value: 1,
@@ -920,11 +827,7 @@ describe("interpreter evaluator", () => {
       new Proxy(target, { get() { return 2; } }).fixed;
     `),
     ).rejects.toMatchObject({ code: VMErrorCode.VMRuntimeError });
-    `),
-    ).rejects.toMatchObject({ code: VMErrorCode.VMRuntimeError });
 
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const target = {};
@@ -932,11 +835,7 @@ describe("interpreter evaluator", () => {
       Reflect.ownKeys(new Proxy(target, { ownKeys() { return []; } }));
     `),
     ).rejects.toMatchObject({ code: VMErrorCode.VMRuntimeError });
-    `),
-    ).rejects.toMatchObject({ code: VMErrorCode.VMRuntimeError });
 
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const target = {};
@@ -944,11 +843,7 @@ describe("interpreter evaluator", () => {
       Reflect.preventExtensions(proxy);
     `),
     ).rejects.toMatchObject({ code: VMErrorCode.VMRuntimeError });
-    `),
-    ).rejects.toMatchObject({ code: VMErrorCode.VMRuntimeError });
 
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       const target = {};
@@ -958,13 +853,9 @@ describe("interpreter evaluator", () => {
       Reflect.setPrototypeOf(proxy, proto);
     `),
     ).rejects.toMatchObject({ code: VMErrorCode.VMRuntimeError });
-    `),
-    ).rejects.toMatchObject({ code: VMErrorCode.VMRuntimeError });
   });
 
   test("supports callable and constructable VM proxies", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       function add(a, b) {
@@ -994,8 +885,6 @@ describe("interpreter evaluator", () => {
       ({ sum: callable(2, 3), first, second });
     `),
     ).resolves.toEqual({
-    `),
-    ).resolves.toEqual({
       first: { proxied: true, value: 5 },
       second: { proxied: true, value: 6 },
       sum: 15,
@@ -1016,9 +905,6 @@ describe("interpreter evaluator", () => {
       globals: { hostBytes, hostDate, hostMap, hostRegExp, hostSet },
     });
 
-    await expect(
-      evaluateSource(
-        `
     await expect(
       evaluateSource(
         `
@@ -1076,16 +962,9 @@ describe("interpreter evaluator", () => {
       await expect(
         evaluateSource(
           `
-      await expect(
-        evaluateSource(
-          `
         globalThis.${marker} = 41;
         this.${marker} += 1;
         [this === globalThis, globalThis.${marker}];
-      `,
-          { context },
-        ),
-      ).resolves.toEqual([true, 42]);
       `,
           { context },
         ),
@@ -1102,8 +981,6 @@ describe("interpreter evaluator", () => {
   test("binds this for guest member calls and ordinary function calls", async () => {
     await expect(
       evaluateSource(`
-    await expect(
-      evaluateSource(`
       globalThis.value = 7;
       const object = {
         value: 2,
@@ -1114,13 +991,9 @@ describe("interpreter evaluator", () => {
       [object.get(), get(), (0, object.get)(), isGlobalThis()];
     `),
     ).resolves.toEqual([2, 7, 7, true]);
-    `),
-    ).resolves.toEqual([2, 7, 7, true]);
   });
 
   test("constructs guest functions with prototype objects and constructor links", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       function Point(x) {
@@ -1138,13 +1011,9 @@ describe("interpreter evaluator", () => {
       ];
     `),
     ).resolves.toEqual([4, 3, true, true, 1, "Point"]);
-    `),
-    ).resolves.toEqual([4, 3, true, true, 1, "Point"]);
   });
 
   test("applies guest constructor return-object rules", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       function ReturnsObject() {
@@ -1158,13 +1027,9 @@ describe("interpreter evaluator", () => {
       [new ReturnsObject().value, new ReturnsPrimitive().value];
     `),
     ).resolves.toEqual([2, 3]);
-    `),
-    ).resolves.toEqual([2, 3]);
   });
 
   test("supports class declarations, expressions, fields, and static members", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       class Counter {
@@ -1209,13 +1074,9 @@ describe("interpreter evaluator", () => {
       ];
     `),
     ).resolves.toEqual([4, 10, 20, 10, 3, "ok", true, true]);
-    `),
-    ).resolves.toEqual([4, 10, 20, 10, 3, "ok", true, true]);
   });
 
   test("supports class inheritance and super for constructors, methods, accessors, and statics", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       class Base {
@@ -1256,13 +1117,9 @@ describe("interpreter evaluator", () => {
       [item.value, item.baseField, item.derivedField, item.afterSuper, item.method(), Derived.read()];
     `),
     ).resolves.toEqual([7, 1, 5, 5, 18, 10]);
-    `),
-    ).resolves.toEqual([7, 1, 5, 5, 18, 10]);
   });
 
   test("supports private fields and private methods without exporting private state", async () => {
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       class Base {
@@ -1300,8 +1157,6 @@ describe("interpreter evaluator", () => {
       code: VMErrorCode.BoundaryUnsupportedType,
     });
 
-    await expect(
-      evaluateSource(`
     await expect(
       evaluateSource(`
       ({
