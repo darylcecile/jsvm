@@ -10,6 +10,8 @@ This repository is an npm library written in TypeScript and managed with Bun.
 - Run tests with `bun test`.
 - Build the package with `bun run build`.
 - Run type checking with `bun run typecheck`.
+- Format the codebase with `bun run format` (uses `oxfmt`; rules live in `.oxfmtrc.json`).
+  Check formatting in CI / before pushing with `bun run format:check`.
 - Keep source files in `src/` and tests in `test/`.
 
 ## Coding guidelines
@@ -18,6 +20,7 @@ This repository is an npm library written in TypeScript and managed with Bun.
 - Keep public APIs documented in `README.md`.
 - Add or update tests for behavior changes.
 - Do not commit generated dependencies such as `node_modules/`.
+- Do not hand-reformat code. Run `bun run format` so changes match the project's `oxfmt` rules.
 
 ## VM guidelines
 
