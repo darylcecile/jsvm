@@ -32,13 +32,7 @@ export class VMError extends Error {
   }
 }
 
-export type VMSerializablePrimitive =
-  | undefined
-  | null
-  | boolean
-  | number
-  | bigint
-  | string;
+export type VMSerializablePrimitive = undefined | null | boolean | number | bigint | string;
 
 export type VMTypedArray =
   | Int8Array
@@ -123,10 +117,7 @@ export type VMSerializedValue =
   | { readonly kind: "bigint"; readonly value: string }
   | { readonly kind: "string"; readonly value: string }
   | { readonly kind: "array"; readonly items: readonly VMSerializedValue[] }
-  | {
-      readonly kind: "object";
-      readonly entries: readonly (readonly [string, VMSerializedValue])[];
-    }
+  | { readonly kind: "object"; readonly entries: readonly (readonly [string, VMSerializedValue])[] }
   | { readonly kind: "date"; readonly time: number }
   | {
       readonly kind: "regexp";
@@ -178,22 +169,20 @@ const typedArrayTags: Record<string, VMTypedArrayName | undefined> = {
   "[object BigUint64Array]": "BigUint64Array",
 };
 
-const typedArrayConstructors: Record<
-  VMTypedArrayName,
-  new (buffer: ArrayBuffer) => VMTypedArray
-> = {
-  Int8Array,
-  Uint8Array,
-  Uint8ClampedArray,
-  Int16Array,
-  Uint16Array,
-  Int32Array,
-  Uint32Array,
-  Float32Array,
-  Float64Array,
-  BigInt64Array,
-  BigUint64Array,
-};
+const typedArrayConstructors: Record<VMTypedArrayName, new (buffer: ArrayBuffer) => VMTypedArray> =
+  {
+    Int8Array,
+    Uint8Array,
+    Uint8ClampedArray,
+    Int16Array,
+    Uint16Array,
+    Int32Array,
+    Uint32Array,
+    Float32Array,
+    Float64Array,
+    BigInt64Array,
+    BigUint64Array,
+  };
 
 export function createCapability(
   name: string,
@@ -225,18 +214,9 @@ export function createCapability(
   const record: CapabilityRecord = { metadata, handler, revoked: false };
 
   Object.defineProperties(capability, {
-    kind: {
-      enumerable: true,
-      value: "capability",
-    },
-    metadata: {
-      enumerable: true,
-      value: metadata,
-    },
-    revoked: {
-      enumerable: true,
-      get: () => record.revoked,
-    },
+    kind: { enumerable: true, value: "capability" },
+    metadata: { enumerable: true, value: metadata },
+    revoked: { enumerable: true, get: () => record.revoked },
     invoke: {
       enumerable: false,
       value: (...args: unknown[]) => invokeBoundaryCapability(capability, args),
@@ -300,9 +280,7 @@ export function serializeBoundaryValue(
   });
 }
 
-export function reconstructBoundaryValue(
-  value: VMSerializedValue,
-): VMSerializableValue {
+export function reconstructBoundaryValue(value: VMSerializedValue): VMSerializableValue {
   return deserialize(value, "$");
 }
 
@@ -357,11 +335,7 @@ export function isBoundarySerializable(
   }
 }
 
-function serialize(
-  value: unknown,
-  path: string,
-  state: SerializationState,
-): VMSerializedValue {
+function serialize(value: unknown, path: string, state: SerializationState): VMSerializedValue {
   if (value === undefined) {
     return { kind: "undefined" };
   }
@@ -716,14 +690,8 @@ function createCapabilityReference(metadata: VMCapabilityMetadata): VMCapability
   const reference = Object.create(null) as VMCapabilityReference;
 
   Object.defineProperties(reference, {
-    kind: {
-      enumerable: true,
-      value: "capability",
-    },
-    metadata: {
-      enumerable: true,
-      value: freezeCapabilityMetadata(metadata),
-    },
+    kind: { enumerable: true, value: "capability" },
+    metadata: { enumerable: true, value: freezeCapabilityMetadata(metadata) },
   });
 
   return Object.freeze(reference);
@@ -772,7 +740,11 @@ function assertNoUnexpectedProperties(
 
   for (const key of keys) {
     if (typeof key !== "string") {
-      throw unsupported(path, value, "Built-in values with symbol properties cannot cross the VM boundary.");
+      throw unsupported(
+        path,
+        value,
+        "Built-in values with symbol properties cannot cross the VM boundary.",
+      );
     }
 
     if (!allowedStringKeys.has(key)) {
@@ -790,7 +762,11 @@ function assertNoUnexpectedTypedArrayProperties(value: VMTypedArray, path: strin
 
   for (const key of Reflect.ownKeys(value)) {
     if (typeof key !== "string") {
-      throw unsupported(path, value, "Typed arrays with symbol properties cannot cross the VM boundary.");
+      throw unsupported(
+        path,
+        value,
+        "Typed arrays with symbol properties cannot cross the VM boundary.",
+      );
     }
 
     if (isArrayIndex(key) && Number(key) < length) {
@@ -874,7 +850,10 @@ function bytesToArrayBuffer(bytes: unknown, path: string): ArrayBuffer {
     const byte = bytes[index];
 
     if (!Number.isInteger(byte) || byte < 0 || byte > 255) {
-      throw invalidSerialized(`${path}.bytes[${index}]`, "Bytes must be integers between 0 and 255.");
+      throw invalidSerialized(
+        `${path}.bytes[${index}]`,
+        "Bytes must be integers between 0 and 255.",
+      );
     }
 
     output[index] = byte;
@@ -918,12 +897,7 @@ function reconstructTypedArray(
   }
 }
 
-function reconstructRegExp(
-  source: string,
-  flags: string,
-  lastIndex: number,
-  path: string,
-): RegExp {
+function reconstructRegExp(source: string, flags: string, lastIndex: number, path: string): RegExp {
   try {
     const regexp = new RegExp(source, flags);
     regexp.lastIndex = lastIndex;
@@ -967,11 +941,7 @@ function unsupported(path: string, value: unknown, reason: string): VMError {
   return new VMError(
     VMErrorCode.BoundaryUnsupportedType,
     `Unsupported VM boundary value at ${path}: ${reason}`,
-    {
-      path,
-      reason,
-      valueType: describeValue(value),
-    },
+    { path, reason, valueType: describeValue(value) },
   );
 }
 
@@ -979,10 +949,7 @@ function invalidSerialized(path: string, reason: string): VMError {
   return new VMError(
     VMErrorCode.BoundaryInvalidSerializedValue,
     `Invalid serialized VM boundary value at ${path}: ${reason}`,
-    {
-      path,
-      reason,
-    },
+    { path, reason },
   );
 }
 

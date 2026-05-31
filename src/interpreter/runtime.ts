@@ -1,9 +1,5 @@
 import { VMError, VMErrorCode } from "../boundary";
-import {
-  VMEnvironment,
-  createGlobalEnvironment,
-  createLexicalEnvironment,
-} from "./environment";
+import { VMEnvironment, createGlobalEnvironment, createLexicalEnvironment } from "./environment";
 import { createOrdinaryObject, type VMObject } from "./object-model";
 
 export type VMCompletionType = "normal" | "return" | "break" | "continue" | "throw";
@@ -82,9 +78,7 @@ export class ExecutionBudget {
   }
 
   get remainingSteps(): number | undefined {
-    return this.maxSteps === undefined
-      ? undefined
-      : Math.max(0, this.maxSteps - this.#stepsUsed);
+    return this.maxSteps === undefined ? undefined : Math.max(0, this.maxSteps - this.#stepsUsed);
   }
 
   get elapsedMs(): number {
@@ -96,17 +90,11 @@ export class ExecutionBudget {
     this.#stepsUsed += normalizedCost;
 
     if (this.maxSteps !== undefined && this.#stepsUsed > this.maxSteps) {
-      throw budgetError("Execution step budget exhausted.", {
-        reason,
-        path: "maxSteps",
-      });
+      throw budgetError("Execution step budget exhausted.", { reason, path: "maxSteps" });
     }
 
     if (this.timeLimitMs !== undefined && this.elapsedMs > this.timeLimitMs) {
-      throw budgetError("Execution time limit exceeded.", {
-        reason,
-        path: "timeLimitMs",
-      });
+      throw budgetError("Execution time limit exceeded.", { reason, path: "timeLimitMs" });
     }
   }
 
@@ -140,22 +128,28 @@ export class VMExecutionContext {
     this.budget.checkpoint(stepCost, reason);
   }
 
-  enterLexicalEnvironment(environment = createLexicalEnvironment(this.lexicalEnvironment)): VMEnvironment {
+  enterLexicalEnvironment(
+    environment = createLexicalEnvironment(this.lexicalEnvironment),
+  ): VMEnvironment {
     this.lexicalEnvironment = environment;
     return environment;
   }
 
   leaveLexicalEnvironment(expected?: VMEnvironment): VMEnvironment {
     if (expected !== undefined && expected !== this.lexicalEnvironment) {
-      throw new VMError(VMErrorCode.VMRuntimeError, "Cannot leave a non-current lexical environment.", {
-        reason: "lexical environment mismatch",
-      });
+      throw new VMError(
+        VMErrorCode.VMRuntimeError,
+        "Cannot leave a non-current lexical environment.",
+        { reason: "lexical environment mismatch" },
+      );
     }
 
     if (this.lexicalEnvironment === this.globalEnvironment) {
-      throw new VMError(VMErrorCode.VMRuntimeError, "Cannot leave the global lexical environment.", {
-        reason: "global environment",
-      });
+      throw new VMError(
+        VMErrorCode.VMRuntimeError,
+        "Cannot leave the global lexical environment.",
+        { reason: "global environment" },
+      );
     }
 
     this.lexicalEnvironment = this.lexicalEnvironment.parent ?? this.globalEnvironment;
@@ -173,10 +167,7 @@ export function createExecutionContext(
   return new VMExecutionContext(options);
 }
 
-function normalizeNonNegativeInteger(
-  value: number | undefined,
-  name: string,
-): number | undefined {
+function normalizeNonNegativeInteger(value: number | undefined, name: string): number | undefined {
   if (value === undefined) {
     return undefined;
   }
@@ -196,10 +187,7 @@ function normalizePositiveInteger(value: number, name: string): number {
   return value;
 }
 
-function normalizeNonNegativeNumber(
-  value: number | undefined,
-  name: string,
-): number | undefined {
+function normalizeNonNegativeNumber(value: number | undefined, name: string): number | undefined {
   if (value === undefined) {
     return undefined;
   }

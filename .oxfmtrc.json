@@ -11,9 +11,5 @@
   "endOfLine": "lf",
   "objectWrap": "collapse",
   "sortImports": true,
-  "ignorePatterns": [
-    "dist/**",
-    "node_modules/**",
-    "bun.lock"
-  ]
+  "ignorePatterns": ["dist/**", "node_modules/**", "bun.lock"]
 }

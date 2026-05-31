@@ -67,10 +67,7 @@ export interface VMEvaluatorOptions {
   readonly budget?: ExecutionBudgetOptions;
 }
 
-type ASTNode = {
-  readonly type: string;
-  readonly [key: string]: unknown;
-};
+type ASTNode = { readonly type: string; readonly [key: string]: unknown };
 
 type VMInternalValue = unknown;
 type Reference = BindingReference | MemberReference | PrivateMemberReference;
@@ -125,11 +122,7 @@ interface VMPrivateName {
 type VMPrivateEntry =
   | { readonly kind: "field"; value: VMInternalValue }
   | { readonly kind: "method"; readonly value: VMUserFunction }
-  | {
-      readonly kind: "accessor";
-      readonly get?: VMUserFunction;
-      readonly set?: VMUserFunction;
-    };
+  | { readonly kind: "accessor"; readonly get?: VMUserFunction; readonly set?: VMUserFunction };
 
 interface VMClassInfo {
   readonly name: string;
@@ -142,15 +135,13 @@ interface VMClassInfo {
 }
 
 type VMClassInstanceElement =
-  | {
-      readonly kind: "field";
-      readonly key: VMPropertyKey;
-      readonly value?: ASTNode;
-    }
+  | { readonly kind: "field"; readonly key: VMPropertyKey; readonly value?: ASTNode }
   | {
       readonly kind: "private";
       readonly name: VMPrivateName;
-      readonly entry: VMPrivateEntry | { readonly kind: "field-initializer"; readonly value?: ASTNode };
+      readonly entry:
+        | VMPrivateEntry
+        | { readonly kind: "field-initializer"; readonly value?: ASTNode };
     };
 
 interface VMClassEvaluationOptions {
@@ -318,13 +309,13 @@ export function createEvaluatorContext(
 
   for (const [name, value] of Object.entries(options.globals ?? {})) {
     assertSafeBindingName(name);
-    defineGlobalBinding(globalEnvironment, globalObject, name, importGuestValue(value, name, intrinsics), {
-      configurable: true,
-      deletable: true,
-      enumerable: false,
-      mutable: true,
-      writable: true,
-    });
+    defineGlobalBinding(
+      globalEnvironment,
+      globalObject,
+      name,
+      importGuestValue(value, name, intrinsics),
+      { configurable: true, deletable: true, enumerable: false, mutable: true, writable: true },
+    );
   }
 
   const context = createExecutionContext({
@@ -341,11 +332,11 @@ export function createEvaluatorContext(
 }
 
 export function createDynamicCodeGlobals(): Readonly<Record<string, unknown>> {
-  const dynamicEvaluator = createNativeCallable("eval", (args, context) =>
-    evaluateDynamicSourceArgument(args[0], asExecutionContext(context), false), {
-    arity: 1,
-    description: "VM-owned dynamic source evaluator",
-  });
+  const dynamicEvaluator = createNativeCallable(
+    "eval",
+    (args, context) => evaluateDynamicSourceArgument(args[0], asExecutionContext(context), false),
+    { arity: 1, description: "VM-owned dynamic source evaluator" },
+  );
   dynamicEvalCallables.add(dynamicEvaluator);
 
   return Object.freeze({
@@ -407,57 +398,103 @@ function createIntrinsics(dateNow?: number): VMIntrinsics {
     wellKnownSymbols,
   } satisfies VMIntrinsics;
 
-  const ObjectConstructor = createNativeFunctionObject("Object", (args, context) => {
-    const value = args[0];
-    if (value === null || value === undefined) {
-      return createGuestObject(context);
-    }
-    return isVMObject(value) ? value : createPrimitiveWrapper(value, getIntrinsics(context));
-  }, { construct: (_args, context) => createGuestObject(context) });
-  const ArrayConstructor = createNativeFunctionObject("Array", (args, context) => {
-    if (args.length === 1 && typeof args[0] === "number") {
-      const length = toArrayLength(args[0]);
-      const array = createGuestArray([], context);
-      defineArrayLengthValue(array, length);
-      return array;
-    }
-    return createGuestArray(args, context);
-  }, { construct: (args, context) => ArrayConstructorRecord(args, context) });
-  const StringConstructor = createNativeFunctionObject("String", async (args, context) => toStringExplicit(args[0], context), {
-    construct: async (args, context) => createPrimitiveWrapper(await toStringExplicit(args[0], context), getIntrinsics(context)),
-  });
-  const NumberConstructor = createNativeFunctionObject("Number", async (args, context) => toNumber(args[0] ?? 0, context), {
-    construct: async (args, context) => createPrimitiveWrapper(await toNumber(args[0] ?? 0, context), getIntrinsics(context)),
-  });
-  const BigIntConstructor = createNativeFunctionObject("BigInt", async (args, context) => toBigIntConstructorValue(args[0] ?? 0, context));
+  const ObjectConstructor = createNativeFunctionObject(
+    "Object",
+    (args, context) => {
+      const value = args[0];
+      if (value === null || value === undefined) {
+        return createGuestObject(context);
+      }
+      return isVMObject(value) ? value : createPrimitiveWrapper(value, getIntrinsics(context));
+    },
+    { construct: (_args, context) => createGuestObject(context) },
+  );
+  const ArrayConstructor = createNativeFunctionObject(
+    "Array",
+    (args, context) => {
+      if (args.length === 1 && typeof args[0] === "number") {
+        const length = toArrayLength(args[0]);
+        const array = createGuestArray([], context);
+        defineArrayLengthValue(array, length);
+        return array;
+      }
+      return createGuestArray(args, context);
+    },
+    { construct: (args, context) => ArrayConstructorRecord(args, context) },
+  );
+  const StringConstructor = createNativeFunctionObject(
+    "String",
+    async (args, context) => toStringExplicit(args[0], context),
+    {
+      construct: async (args, context) =>
+        createPrimitiveWrapper(await toStringExplicit(args[0], context), getIntrinsics(context)),
+    },
+  );
+  const NumberConstructor = createNativeFunctionObject(
+    "Number",
+    async (args, context) => toNumber(args[0] ?? 0, context),
+    {
+      construct: async (args, context) =>
+        createPrimitiveWrapper(await toNumber(args[0] ?? 0, context), getIntrinsics(context)),
+    },
+  );
+  const BigIntConstructor = createNativeFunctionObject("BigInt", async (args, context) =>
+    toBigIntConstructorValue(args[0] ?? 0, context),
+  );
   const BooleanConstructor = createNativeFunctionObject("Boolean", (args) => Boolean(args[0]), {
     construct: (args, context) => createPrimitiveWrapper(Boolean(args[0]), getIntrinsics(context)),
   });
   const SymbolConstructor = createNativeFunctionObject("Symbol", async (args, context) => {
-    return createVMSymbol(args[0] === undefined ? undefined : await toStringForCoercion(args[0], context));
+    return createVMSymbol(
+      args[0] === undefined ? undefined : await toStringForCoercion(args[0], context),
+    );
   });
-  const RegExpConstructor = createNativeFunctionObject("RegExp", (args, context) =>
-    createRegExpFromArgs(args, getIntrinsics(context)), {
-    construct: (args, context) => createRegExpFromArgs(args, getIntrinsics(context)),
-  });
-  const DateConstructor = createNativeFunctionObject("Date", (args, context) => {
-    const date = createDateFromArgs(args, getIntrinsics(context));
-    return new Date(assertDateSlot(date).time).toString();
-  }, {
-    construct: (args, context) => createDateFromArgs(args, getIntrinsics(context)),
-  });
-  const MapConstructor = createNativeFunctionObject("Map", (_args, context) => createMapObject([], getIntrinsics(context)), {
-    construct: async (args, context) => createMapObject(await iterableEntries(args[0], asExecutionContext(context)), getIntrinsics(context)),
-  });
-  const SetConstructor = createNativeFunctionObject("Set", (_args, context) => createSetObject([], getIntrinsics(context)), {
-    construct: async (args, context) => createSetObject(await iterableValues(args[0], asExecutionContext(context)), getIntrinsics(context)),
-  });
+  const RegExpConstructor = createNativeFunctionObject(
+    "RegExp",
+    (args, context) => createRegExpFromArgs(args, getIntrinsics(context)),
+    { construct: (args, context) => createRegExpFromArgs(args, getIntrinsics(context)) },
+  );
+  const DateConstructor = createNativeFunctionObject(
+    "Date",
+    (args, context) => {
+      const date = createDateFromArgs(args, getIntrinsics(context));
+      return new Date(assertDateSlot(date).time).toString();
+    },
+    { construct: (args, context) => createDateFromArgs(args, getIntrinsics(context)) },
+  );
+  const MapConstructor = createNativeFunctionObject(
+    "Map",
+    (_args, context) => createMapObject([], getIntrinsics(context)),
+    {
+      construct: async (args, context) =>
+        createMapObject(
+          await iterableEntries(args[0], asExecutionContext(context)),
+          getIntrinsics(context),
+        ),
+    },
+  );
+  const SetConstructor = createNativeFunctionObject(
+    "Set",
+    (_args, context) => createSetObject([], getIntrinsics(context)),
+    {
+      construct: async (args, context) =>
+        createSetObject(
+          await iterableValues(args[0], asExecutionContext(context)),
+          getIntrinsics(context),
+        ),
+    },
+  );
   const ReflectObject = createOrdinaryObject(objectPrototype);
-  const ProxyConstructor = createNativeFunctionObject("Proxy", () => {
-    throw runtimeError("Proxy must be called with new.", { reason: "invalid proxy call" });
-  }, {
-    construct: (args, context) => createProxyObject(args[0], args[1], asExecutionContext(context)),
-  });
+  const ProxyConstructor = createNativeFunctionObject(
+    "Proxy",
+    () => {
+      throw runtimeError("Proxy must be called with new.", { reason: "invalid proxy call" });
+    },
+    {
+      construct: (args, context) =>
+        createProxyObject(args[0], args[1], asExecutionContext(context)),
+    },
+  );
 
   linkConstructor(ObjectConstructor, objectPrototype, "Object");
   linkConstructor(ArrayConstructor, arrayPrototype, "Array");
@@ -485,10 +522,20 @@ function createIntrinsics(dateNow?: number): VMIntrinsics {
     writable: false,
   });
 
-  defineBuiltin(objectPrototype, "valueOf", createNativeFunctionObject("Object.prototype.valueOf", (_args, context, thisValue) =>
-    toObject(thisValue, context)));
-  defineBuiltin(objectPrototype, "toString", createNativeFunctionObject("Object.prototype.toString", async (_args, context, thisValue) =>
-    objectToString(thisValue, context)));
+  defineBuiltin(
+    objectPrototype,
+    "valueOf",
+    createNativeFunctionObject("Object.prototype.valueOf", (_args, context, thisValue) =>
+      toObject(thisValue, context),
+    ),
+  );
+  defineBuiltin(
+    objectPrototype,
+    "toString",
+    createNativeFunctionObject("Object.prototype.toString", async (_args, context, thisValue) =>
+      objectToString(thisValue, context),
+    ),
+  );
 
   defineBuiltinData(NumberConstructor, "POSITIVE_INFINITY", Number.POSITIVE_INFINITY, {
     configurable: false,
@@ -518,142 +565,338 @@ function createIntrinsics(dateNow?: number): VMIntrinsics {
 
   const errorConstructors = createErrorConstructors(intrinsics);
 
-  defineBuiltin(ObjectConstructor, "keys", createNativeFunctionObject("Object.keys", async (args, context) =>
-    createGuestArray(await getEnumerableOwnStringKeys(toObject(args[0], context), context), context)));
-  defineBuiltin(ObjectConstructor, "values", createNativeFunctionObject("Object.values", async (args, context) =>
-    createGuestArray(await (await getEnumerableOwnStringKeys(toObject(args[0], context), context)).reduce<Promise<VMInternalValue[]>>(async (promise, key) => {
-      const values = await promise;
-      values.push(await getGuestProperty(toObject(args[0], context), key, context));
-      return values;
-    }, Promise.resolve([])), context)));
-  defineBuiltin(ObjectConstructor, "entries", createNativeFunctionObject("Object.entries", async (args, context) => {
-    const object = toObject(args[0], context);
-    const entries: VMInternalValue[] = [];
-    for (const key of await getEnumerableOwnStringKeys(object, context)) {
-      entries.push(createGuestArray([key, await getGuestProperty(object, key, context)], context));
-    }
-    return createGuestArray(entries, context);
-  }));
-  defineBuiltin(ObjectConstructor, "assign", createNativeFunctionObject("Object.assign", async (args, context) => {
-    const target = toObject(args[0], context);
-    for (const sourceValue of args.slice(1)) {
-      if (sourceValue === null || sourceValue === undefined) {
-        continue;
+  defineBuiltin(
+    ObjectConstructor,
+    "keys",
+    createNativeFunctionObject("Object.keys", async (args, context) =>
+      createGuestArray(
+        await getEnumerableOwnStringKeys(toObject(args[0], context), context),
+        context,
+      ),
+    ),
+  );
+  defineBuiltin(
+    ObjectConstructor,
+    "values",
+    createNativeFunctionObject("Object.values", async (args, context) =>
+      createGuestArray(
+        await (
+          await getEnumerableOwnStringKeys(toObject(args[0], context), context)
+        ).reduce<Promise<VMInternalValue[]>>(async (promise, key) => {
+          const values = await promise;
+          values.push(await getGuestProperty(toObject(args[0], context), key, context));
+          return values;
+        }, Promise.resolve([])),
+        context,
+      ),
+    ),
+  );
+  defineBuiltin(
+    ObjectConstructor,
+    "entries",
+    createNativeFunctionObject("Object.entries", async (args, context) => {
+      const object = toObject(args[0], context);
+      const entries: VMInternalValue[] = [];
+      for (const key of await getEnumerableOwnStringKeys(object, context)) {
+        entries.push(
+          createGuestArray([key, await getGuestProperty(object, key, context)], context),
+        );
       }
-      const source = toObject(sourceValue, context);
-      for (const key of await getEnumerableOwnStringKeys(source, context)) {
-        await setGuestProperty(target, key, await getGuestProperty(source, key, context), context);
+      return createGuestArray(entries, context);
+    }),
+  );
+  defineBuiltin(
+    ObjectConstructor,
+    "assign",
+    createNativeFunctionObject("Object.assign", async (args, context) => {
+      const target = toObject(args[0], context);
+      for (const sourceValue of args.slice(1)) {
+        if (sourceValue === null || sourceValue === undefined) {
+          continue;
+        }
+        const source = toObject(sourceValue, context);
+        for (const key of await getEnumerableOwnStringKeys(source, context)) {
+          await setGuestProperty(
+            target,
+            key,
+            await getGuestProperty(source, key, context),
+            context,
+          );
+        }
       }
-    }
-    return target;
-  }));
-  defineBuiltin(ObjectConstructor, "create", createNativeFunctionObject("Object.create", (args, context) => {
-    const prototype = args[0];
-    if (prototype !== null && !isVMObject(prototype)) {
-      throwGuestError(context, "TypeError", "Object.create prototype must be a VM object or null.");
-    }
-    return createOrdinaryObject(prototype);
-  }));
-  defineBuiltin(ObjectConstructor, "defineProperty", createNativeFunctionObject("Object.defineProperty", async (args, context) => {
-    const object = toObject(args[0], context);
-    const key = await toPropertyKey(args[1], context);
-    const descriptor = await descriptorFromGuestObject(args[2], context);
-    if (!await definePropertyGuest(object, key, descriptor, context)) {
-      throwGuestError(context, "TypeError", "Unable to define VM object property.");
-    }
-    return object;
-  }));
-  defineBuiltin(ObjectConstructor, "getOwnPropertyDescriptor", createNativeFunctionObject("Object.getOwnPropertyDescriptor", async (args, context) => {
-    const key = await toPropertyKey(args[1], context);
-    const descriptor = getOwnCallablePropertyDescriptor(args[0], key)
-      ?? await getOwnPropertyDescriptorGuest(toObject(args[0], context), key, context);
-    return descriptor === undefined ? undefined : createGuestDescriptorObject(descriptor, context);
-  }));
-  defineBuiltin(ObjectConstructor, "getPrototypeOf", createNativeFunctionObject("Object.getPrototypeOf", async (args, context) =>
-    getPrototypeOfGuest(toObject(args[0], context), context)));
-  defineBuiltin(ObjectConstructor, "setPrototypeOf", createNativeFunctionObject("Object.setPrototypeOf", async (args, context) => {
-    const object = toObject(args[0], context);
-    const prototype = args[1];
-    if (prototype !== null && !isVMObject(prototype)) {
-      throwGuestError(context, "TypeError", "Object.setPrototypeOf prototype must be a VM object or null.");
-    }
-    if (!await setPrototypeOfGuest(object, prototype, context)) {
-      throw runtimeError("Unable to set VM object prototype.", { reason: "prototype set failed" });
-    }
-    return object;
-  }));
-  defineBuiltin(ObjectConstructor, "isExtensible", createNativeFunctionObject("Object.isExtensible", async (args, context) =>
-    isExtensibleGuest(toObject(args[0], context), context)));
-  defineBuiltin(ObjectConstructor, "preventExtensions", createNativeFunctionObject("Object.preventExtensions", async (args, context) => {
-    const object = toObject(args[0], context);
-    if (!await preventExtensionsGuest(object, context)) {
-      throw runtimeError("Unable to prevent extensions for VM object.", { reason: "prevent extensions failed" });
-    }
-    return object;
-  }));
+      return target;
+    }),
+  );
+  defineBuiltin(
+    ObjectConstructor,
+    "create",
+    createNativeFunctionObject("Object.create", (args, context) => {
+      const prototype = args[0];
+      if (prototype !== null && !isVMObject(prototype)) {
+        throwGuestError(
+          context,
+          "TypeError",
+          "Object.create prototype must be a VM object or null.",
+        );
+      }
+      return createOrdinaryObject(prototype);
+    }),
+  );
+  defineBuiltin(
+    ObjectConstructor,
+    "defineProperty",
+    createNativeFunctionObject("Object.defineProperty", async (args, context) => {
+      const object = toObject(args[0], context);
+      const key = await toPropertyKey(args[1], context);
+      const descriptor = await descriptorFromGuestObject(args[2], context);
+      if (!(await definePropertyGuest(object, key, descriptor, context))) {
+        throwGuestError(context, "TypeError", "Unable to define VM object property.");
+      }
+      return object;
+    }),
+  );
+  defineBuiltin(
+    ObjectConstructor,
+    "getOwnPropertyDescriptor",
+    createNativeFunctionObject("Object.getOwnPropertyDescriptor", async (args, context) => {
+      const key = await toPropertyKey(args[1], context);
+      const descriptor =
+        getOwnCallablePropertyDescriptor(args[0], key) ??
+        (await getOwnPropertyDescriptorGuest(toObject(args[0], context), key, context));
+      return descriptor === undefined
+        ? undefined
+        : createGuestDescriptorObject(descriptor, context);
+    }),
+  );
+  defineBuiltin(
+    ObjectConstructor,
+    "getPrototypeOf",
+    createNativeFunctionObject("Object.getPrototypeOf", async (args, context) =>
+      getPrototypeOfGuest(toObject(args[0], context), context),
+    ),
+  );
+  defineBuiltin(
+    ObjectConstructor,
+    "setPrototypeOf",
+    createNativeFunctionObject("Object.setPrototypeOf", async (args, context) => {
+      const object = toObject(args[0], context);
+      const prototype = args[1];
+      if (prototype !== null && !isVMObject(prototype)) {
+        throwGuestError(
+          context,
+          "TypeError",
+          "Object.setPrototypeOf prototype must be a VM object or null.",
+        );
+      }
+      if (!(await setPrototypeOfGuest(object, prototype, context))) {
+        throw runtimeError("Unable to set VM object prototype.", {
+          reason: "prototype set failed",
+        });
+      }
+      return object;
+    }),
+  );
+  defineBuiltin(
+    ObjectConstructor,
+    "isExtensible",
+    createNativeFunctionObject("Object.isExtensible", async (args, context) =>
+      isExtensibleGuest(toObject(args[0], context), context),
+    ),
+  );
+  defineBuiltin(
+    ObjectConstructor,
+    "preventExtensions",
+    createNativeFunctionObject("Object.preventExtensions", async (args, context) => {
+      const object = toObject(args[0], context);
+      if (!(await preventExtensionsGuest(object, context))) {
+        throw runtimeError("Unable to prevent extensions for VM object.", {
+          reason: "prevent extensions failed",
+        });
+      }
+      return object;
+    }),
+  );
 
-  defineBuiltin(ReflectObject, "get", createNativeFunctionObject("Reflect.get", async (args, context) =>
-    getGuestProperty(toObject(args[0], context), await toPropertyKey(args[1], context), context, args.length >= 3 ? args[2] : args[0])));
-  defineBuiltin(ReflectObject, "set", createNativeFunctionObject("Reflect.set", async (args, context) =>
-    setGuestProperty(toObject(args[0], context), await toPropertyKey(args[1], context), args[2], context, args.length >= 4 ? args[3] : args[0])));
-  defineBuiltin(ReflectObject, "has", createNativeFunctionObject("Reflect.has", async (args, context) =>
-    hasGuestProperty(args[0], await toPropertyKey(args[1], context), context)));
-  defineBuiltin(ReflectObject, "deleteProperty", createNativeFunctionObject("Reflect.deleteProperty", async (args, context) =>
-    deleteGuestProperty(toObject(args[0], context), await toPropertyKey(args[1], context), context)));
-  defineBuiltin(ReflectObject, "ownKeys", createNativeFunctionObject("Reflect.ownKeys", async (args, context) =>
-    createGuestArray(await ownKeysGuest(toObject(args[0], context), context), context)));
-  defineBuiltin(ReflectObject, "getOwnPropertyDescriptor", createNativeFunctionObject("Reflect.getOwnPropertyDescriptor", async (args, context) => {
-    const key = await toPropertyKey(args[1], context);
-    const descriptor = getOwnCallablePropertyDescriptor(args[0], key)
-      ?? await getOwnPropertyDescriptorGuest(toObject(args[0], context), key, context);
-    return descriptor === undefined ? undefined : createGuestDescriptorObject(descriptor, context);
-  }));
-  defineBuiltin(ReflectObject, "defineProperty", createNativeFunctionObject("Reflect.defineProperty", async (args, context) =>
-    definePropertyGuest(toObject(args[0], context), await toPropertyKey(args[1], context), await descriptorFromGuestObject(args[2], context), context)));
-  defineBuiltin(ReflectObject, "getPrototypeOf", createNativeFunctionObject("Reflect.getPrototypeOf", async (args, context) =>
-    getPrototypeOfGuest(toObject(args[0], context), context)));
-  defineBuiltin(ReflectObject, "setPrototypeOf", createNativeFunctionObject("Reflect.setPrototypeOf", async (args, context) => {
-    const prototype = args[1];
-    if (prototype !== null && !isVMObject(prototype)) {
-      throwGuestError(context, "TypeError", "Reflect.setPrototypeOf prototype must be a VM object or null.");
-    }
-    return setPrototypeOfGuest(toObject(args[0], context), prototype, context);
-  }));
-  defineBuiltin(ReflectObject, "isExtensible", createNativeFunctionObject("Reflect.isExtensible", async (args, context) =>
-    isExtensibleGuest(toObject(args[0], context), context)));
-  defineBuiltin(ReflectObject, "preventExtensions", createNativeFunctionObject("Reflect.preventExtensions", async (args, context) =>
-    preventExtensionsGuest(toObject(args[0], context), context)));
-  defineBuiltin(ReflectObject, "apply", createNativeFunctionObject("Reflect.apply", async (args, context) =>
-    invokeCallableValue(args[0], await arrayLikeArgumentList(args[2], context), context, args[1], args[1])));
-  defineBuiltin(ReflectObject, "construct", createNativeFunctionObject("Reflect.construct", async (args, context) => {
-    const newTarget = args.length >= 3 ? args[2] : args[0];
-    if (newTarget !== args[0]) {
-      throw runtimeError("Reflect.construct with a distinct newTarget is not supported yet.", { reason: "unsupported newTarget" });
-    }
-    return constructValue(args[0], await arrayLikeArgumentList(args[1], context), context);
-  }));
+  defineBuiltin(
+    ReflectObject,
+    "get",
+    createNativeFunctionObject("Reflect.get", async (args, context) =>
+      getGuestProperty(
+        toObject(args[0], context),
+        await toPropertyKey(args[1], context),
+        context,
+        args.length >= 3 ? args[2] : args[0],
+      ),
+    ),
+  );
+  defineBuiltin(
+    ReflectObject,
+    "set",
+    createNativeFunctionObject("Reflect.set", async (args, context) =>
+      setGuestProperty(
+        toObject(args[0], context),
+        await toPropertyKey(args[1], context),
+        args[2],
+        context,
+        args.length >= 4 ? args[3] : args[0],
+      ),
+    ),
+  );
+  defineBuiltin(
+    ReflectObject,
+    "has",
+    createNativeFunctionObject("Reflect.has", async (args, context) =>
+      hasGuestProperty(args[0], await toPropertyKey(args[1], context), context),
+    ),
+  );
+  defineBuiltin(
+    ReflectObject,
+    "deleteProperty",
+    createNativeFunctionObject("Reflect.deleteProperty", async (args, context) =>
+      deleteGuestProperty(
+        toObject(args[0], context),
+        await toPropertyKey(args[1], context),
+        context,
+      ),
+    ),
+  );
+  defineBuiltin(
+    ReflectObject,
+    "ownKeys",
+    createNativeFunctionObject("Reflect.ownKeys", async (args, context) =>
+      createGuestArray(await ownKeysGuest(toObject(args[0], context), context), context),
+    ),
+  );
+  defineBuiltin(
+    ReflectObject,
+    "getOwnPropertyDescriptor",
+    createNativeFunctionObject("Reflect.getOwnPropertyDescriptor", async (args, context) => {
+      const key = await toPropertyKey(args[1], context);
+      const descriptor =
+        getOwnCallablePropertyDescriptor(args[0], key) ??
+        (await getOwnPropertyDescriptorGuest(toObject(args[0], context), key, context));
+      return descriptor === undefined
+        ? undefined
+        : createGuestDescriptorObject(descriptor, context);
+    }),
+  );
+  defineBuiltin(
+    ReflectObject,
+    "defineProperty",
+    createNativeFunctionObject("Reflect.defineProperty", async (args, context) =>
+      definePropertyGuest(
+        toObject(args[0], context),
+        await toPropertyKey(args[1], context),
+        await descriptorFromGuestObject(args[2], context),
+        context,
+      ),
+    ),
+  );
+  defineBuiltin(
+    ReflectObject,
+    "getPrototypeOf",
+    createNativeFunctionObject("Reflect.getPrototypeOf", async (args, context) =>
+      getPrototypeOfGuest(toObject(args[0], context), context),
+    ),
+  );
+  defineBuiltin(
+    ReflectObject,
+    "setPrototypeOf",
+    createNativeFunctionObject("Reflect.setPrototypeOf", async (args, context) => {
+      const prototype = args[1];
+      if (prototype !== null && !isVMObject(prototype)) {
+        throwGuestError(
+          context,
+          "TypeError",
+          "Reflect.setPrototypeOf prototype must be a VM object or null.",
+        );
+      }
+      return setPrototypeOfGuest(toObject(args[0], context), prototype, context);
+    }),
+  );
+  defineBuiltin(
+    ReflectObject,
+    "isExtensible",
+    createNativeFunctionObject("Reflect.isExtensible", async (args, context) =>
+      isExtensibleGuest(toObject(args[0], context), context),
+    ),
+  );
+  defineBuiltin(
+    ReflectObject,
+    "preventExtensions",
+    createNativeFunctionObject("Reflect.preventExtensions", async (args, context) =>
+      preventExtensionsGuest(toObject(args[0], context), context),
+    ),
+  );
+  defineBuiltin(
+    ReflectObject,
+    "apply",
+    createNativeFunctionObject("Reflect.apply", async (args, context) =>
+      invokeCallableValue(
+        args[0],
+        await arrayLikeArgumentList(args[2], context),
+        context,
+        args[1],
+        args[1],
+      ),
+    ),
+  );
+  defineBuiltin(
+    ReflectObject,
+    "construct",
+    createNativeFunctionObject("Reflect.construct", async (args, context) => {
+      const newTarget = args.length >= 3 ? args[2] : args[0];
+      if (newTarget !== args[0]) {
+        throw runtimeError("Reflect.construct with a distinct newTarget is not supported yet.", {
+          reason: "unsupported newTarget",
+        });
+      }
+      return constructValue(args[0], await arrayLikeArgumentList(args[1], context), context);
+    }),
+  );
 
-  defineBuiltin(ArrayConstructor, "isArray", createNativeFunctionObject("Array.isArray", (args) => isArrayLikeObject(args[0])));
-  defineBuiltin(ArrayConstructor, "of", createNativeFunctionObject("Array.of", (args, context) => createGuestArray(args, context)));
-  defineBuiltin(ArrayConstructor, "from", createNativeFunctionObject("Array.from", async (args, context) =>
-    createGuestArray(await iterableValuesAsync(args[0], context), context)));
+  defineBuiltin(
+    ArrayConstructor,
+    "isArray",
+    createNativeFunctionObject("Array.isArray", (args) => isArrayLikeObject(args[0])),
+  );
+  defineBuiltin(
+    ArrayConstructor,
+    "of",
+    createNativeFunctionObject("Array.of", (args, context) => createGuestArray(args, context)),
+  );
+  defineBuiltin(
+    ArrayConstructor,
+    "from",
+    createNativeFunctionObject("Array.from", async (args, context) =>
+      createGuestArray(await iterableValuesAsync(args[0], context), context),
+    ),
+  );
 
-  defineBuiltin(SymbolConstructor, "for", createNativeFunctionObject("Symbol.for", async (args, context) => {
-    const key = await toStringForCoercion(args[0], context);
-    const registry = getIntrinsics(context).symbolRegistry;
-    let symbol = registry.get(key);
-    if (symbol === undefined) {
-      symbol = createVMSymbol(key, { registryKey: key });
-      registry.set(key, symbol);
-    }
-    return symbol;
-  }));
-  defineBuiltin(SymbolConstructor, "keyFor", createNativeFunctionObject("Symbol.keyFor", (args, context) => {
-    if (!isVMSymbol(args[0])) {
-      throwGuestError(context, "TypeError", "Symbol.keyFor requires a symbol.");
-    }
-    return args[0].registryKey;
-  }));
+  defineBuiltin(
+    SymbolConstructor,
+    "for",
+    createNativeFunctionObject("Symbol.for", async (args, context) => {
+      const key = await toStringForCoercion(args[0], context);
+      const registry = getIntrinsics(context).symbolRegistry;
+      let symbol = registry.get(key);
+      if (symbol === undefined) {
+        symbol = createVMSymbol(key, { registryKey: key });
+        registry.set(key, symbol);
+      }
+      return symbol;
+    }),
+  );
+  defineBuiltin(
+    SymbolConstructor,
+    "keyFor",
+    createNativeFunctionObject("Symbol.keyFor", (args, context) => {
+      if (!isVMSymbol(args[0])) {
+        throwGuestError(context, "TypeError", "Symbol.keyFor requires a symbol.");
+      }
+      return args[0].registryKey;
+    }),
+  );
   defineBuiltinData(SymbolConstructor, "iterator", wellKnownSymbols.iterator, {
     configurable: false,
     enumerable: false,
@@ -670,218 +913,473 @@ function createIntrinsics(dateNow?: number): VMIntrinsics {
     writable: false,
   });
 
-  defineBuiltin(arrayPrototype, "map", createNativeFunctionObject("Array.prototype.map", async (args, context, thisValue) => {
-    const array = toArrayObject(thisValue, context);
-    const callback = args[0];
-    const values = await getArrayIndexValues(array, context);
-    const mapped: VMInternalValue[] = [];
-    for (let index = 0; index < values.length; index += 1) {
-      mapped.push(await invokeCallableValue(callback, [values[index], index, array], context, args[1], args[1]));
-    }
-    return createGuestArray(mapped, context);
-  }));
-  defineBuiltin(arrayPrototype, "filter", createNativeFunctionObject("Array.prototype.filter", async (args, context, thisValue) => {
-    const array = toArrayObject(thisValue, context);
-    const callback = args[0];
-    const output: VMInternalValue[] = [];
-    const values = await getArrayIndexValues(array, context);
-    for (let index = 0; index < values.length; index += 1) {
-      if (isTruthy(await invokeCallableValue(callback, [values[index], index, array], context, args[1], args[1]))) {
-        output.push(values[index]);
+  defineBuiltin(
+    arrayPrototype,
+    "map",
+    createNativeFunctionObject("Array.prototype.map", async (args, context, thisValue) => {
+      const array = toArrayObject(thisValue, context);
+      const callback = args[0];
+      const values = await getArrayIndexValues(array, context);
+      const mapped: VMInternalValue[] = [];
+      for (let index = 0; index < values.length; index += 1) {
+        mapped.push(
+          await invokeCallableValue(
+            callback,
+            [values[index], index, array],
+            context,
+            args[1],
+            args[1],
+          ),
+        );
       }
-    }
-    return createGuestArray(output, context);
-  }));
-  defineBuiltin(arrayPrototype, "reduce", createNativeFunctionObject("Array.prototype.reduce", async (args, context, thisValue) => {
-    const values = await getArrayIndexValues(toArrayObject(thisValue, context), context);
-    if (values.length === 0 && args.length < 2) {
-      throw runtimeError("Reduce of empty array with no initial value.", { reason: "empty reduce" });
-    }
-    let index = args.length >= 2 ? 0 : 1;
-    let accumulator = args.length >= 2 ? args[1] : values[0];
-    for (; index < values.length; index += 1) {
-      accumulator = await invokeCallableValue(args[0], [accumulator, values[index], index, thisValue], context, undefined);
-    }
-    return accumulator;
-  }));
-  defineBuiltin(arrayPrototype, "forEach", createNativeFunctionObject("Array.prototype.forEach", async (args, context, thisValue) => {
-    const array = toArrayObject(thisValue, context);
-    const values = await getArrayIndexValues(array, context);
-    for (let index = 0; index < values.length; index += 1) {
-      await invokeCallableValue(args[0], [values[index], index, array], context, args[1], args[1]);
-    }
-    return undefined;
-  }));
-  defineBuiltin(arrayPrototype, "includes", createNativeFunctionObject("Array.prototype.includes", async (args, context, thisValue) => {
-    const values = await getArrayIndexValues(toArrayObject(thisValue, context), context);
-    const search = args[0];
-    const start = Math.max(0, Number(args[1] ?? 0));
-    return values.slice(start).some((value) => Object.is(value, search) || value === search);
-  }));
-  defineBuiltin(arrayPrototype, "slice", createNativeFunctionObject("Array.prototype.slice", async (args, context, thisValue) => {
-    const values = await getArrayIndexValues(toArrayObject(thisValue, context), context);
-    return createGuestArray(values.slice(normalizeSliceIndex(args[0], values.length, 0), normalizeSliceIndex(args[1], values.length, values.length)), context);
-  }));
-  defineBuiltin(arrayPrototype, "join", createNativeFunctionObject("Array.prototype.join", async (args, context, thisValue) => {
-    const values = await getArrayIndexValues(toArrayObject(thisValue, context), context);
-    const separator = args[0] === undefined ? "," : String(args[0]);
-    return values.map((value) => value === null || value === undefined ? "" : String(value)).join(separator);
-  }));
-  defineBuiltin(arrayPrototype, "push", createNativeFunctionObject("Array.prototype.push", async (args, context, thisValue) => {
-    const array = toArrayObject(thisValue, context);
-    const length = await getArrayLengthValue(array, context);
-    for (let index = 0; index < args.length; index += 1) {
-      await setGuestProperty(array, String(length + index), args[index], context);
-    }
-    return length + args.length;
-  }));
-  defineBuiltin(arrayPrototype, "pop", createNativeFunctionObject("Array.prototype.pop", async (_args, context, thisValue) => {
-    const array = toArrayObject(thisValue, context);
-    const length = await getArrayLengthValue(array, context);
-    if (length === 0) {
-      defineArrayLengthValue(array, 0);
+      return createGuestArray(mapped, context);
+    }),
+  );
+  defineBuiltin(
+    arrayPrototype,
+    "filter",
+    createNativeFunctionObject("Array.prototype.filter", async (args, context, thisValue) => {
+      const array = toArrayObject(thisValue, context);
+      const callback = args[0];
+      const output: VMInternalValue[] = [];
+      const values = await getArrayIndexValues(array, context);
+      for (let index = 0; index < values.length; index += 1) {
+        if (
+          isTruthy(
+            await invokeCallableValue(
+              callback,
+              [values[index], index, array],
+              context,
+              args[1],
+              args[1],
+            ),
+          )
+        ) {
+          output.push(values[index]);
+        }
+      }
+      return createGuestArray(output, context);
+    }),
+  );
+  defineBuiltin(
+    arrayPrototype,
+    "reduce",
+    createNativeFunctionObject("Array.prototype.reduce", async (args, context, thisValue) => {
+      const values = await getArrayIndexValues(toArrayObject(thisValue, context), context);
+      if (values.length === 0 && args.length < 2) {
+        throw runtimeError("Reduce of empty array with no initial value.", {
+          reason: "empty reduce",
+        });
+      }
+      let index = args.length >= 2 ? 0 : 1;
+      let accumulator = args.length >= 2 ? args[1] : values[0];
+      for (; index < values.length; index += 1) {
+        accumulator = await invokeCallableValue(
+          args[0],
+          [accumulator, values[index], index, thisValue],
+          context,
+          undefined,
+        );
+      }
+      return accumulator;
+    }),
+  );
+  defineBuiltin(
+    arrayPrototype,
+    "forEach",
+    createNativeFunctionObject("Array.prototype.forEach", async (args, context, thisValue) => {
+      const array = toArrayObject(thisValue, context);
+      const values = await getArrayIndexValues(array, context);
+      for (let index = 0; index < values.length; index += 1) {
+        await invokeCallableValue(
+          args[0],
+          [values[index], index, array],
+          context,
+          args[1],
+          args[1],
+        );
+      }
       return undefined;
-    }
-    const key = String(length - 1);
-    const value = await getGuestProperty(array, key, context);
-    await deleteGuestProperty(array, key, context);
-    defineArrayLengthValue(array, length - 1);
-    return value;
-  }));
+    }),
+  );
+  defineBuiltin(
+    arrayPrototype,
+    "includes",
+    createNativeFunctionObject("Array.prototype.includes", async (args, context, thisValue) => {
+      const values = await getArrayIndexValues(toArrayObject(thisValue, context), context);
+      const search = args[0];
+      const start = Math.max(0, Number(args[1] ?? 0));
+      return values.slice(start).some((value) => Object.is(value, search) || value === search);
+    }),
+  );
+  defineBuiltin(
+    arrayPrototype,
+    "slice",
+    createNativeFunctionObject("Array.prototype.slice", async (args, context, thisValue) => {
+      const values = await getArrayIndexValues(toArrayObject(thisValue, context), context);
+      return createGuestArray(
+        values.slice(
+          normalizeSliceIndex(args[0], values.length, 0),
+          normalizeSliceIndex(args[1], values.length, values.length),
+        ),
+        context,
+      );
+    }),
+  );
+  defineBuiltin(
+    arrayPrototype,
+    "join",
+    createNativeFunctionObject("Array.prototype.join", async (args, context, thisValue) => {
+      const values = await getArrayIndexValues(toArrayObject(thisValue, context), context);
+      const separator = args[0] === undefined ? "," : String(args[0]);
+      return values
+        .map((value) => (value === null || value === undefined ? "" : String(value)))
+        .join(separator);
+    }),
+  );
+  defineBuiltin(
+    arrayPrototype,
+    "push",
+    createNativeFunctionObject("Array.prototype.push", async (args, context, thisValue) => {
+      const array = toArrayObject(thisValue, context);
+      const length = await getArrayLengthValue(array, context);
+      for (let index = 0; index < args.length; index += 1) {
+        await setGuestProperty(array, String(length + index), args[index], context);
+      }
+      return length + args.length;
+    }),
+  );
+  defineBuiltin(
+    arrayPrototype,
+    "pop",
+    createNativeFunctionObject("Array.prototype.pop", async (_args, context, thisValue) => {
+      const array = toArrayObject(thisValue, context);
+      const length = await getArrayLengthValue(array, context);
+      if (length === 0) {
+        defineArrayLengthValue(array, 0);
+        return undefined;
+      }
+      const key = String(length - 1);
+      const value = await getGuestProperty(array, key, context);
+      await deleteGuestProperty(array, key, context);
+      defineArrayLengthValue(array, length - 1);
+      return value;
+    }),
+  );
 
-  defineBuiltin(stringPrototype, "includes", createNativeFunctionObject("String.prototype.includes", (args, _context, thisValue) =>
-    String(thisValue ?? "").includes(String(args[0]), args[1] === undefined ? undefined : Number(args[1]))));
-  defineBuiltin(stringPrototype, "slice", createNativeFunctionObject("String.prototype.slice", (args, _context, thisValue) =>
-    String(thisValue ?? "").slice(args[0] === undefined ? undefined : Number(args[0]), args[1] === undefined ? undefined : Number(args[1]))));
-  defineBuiltin(stringPrototype, "split", createNativeFunctionObject("String.prototype.split", (args, context, thisValue) => {
-    const separator = args[0] === undefined ? undefined : String(args[0]);
-    const input = String(thisValue ?? "");
-    return createGuestArray(
-      separator === undefined
-        ? [input]
-        : input.split(separator, args[1] === undefined ? undefined : Number(args[1])),
-      context,
-    );
-  }));
-  defineBuiltin(stringPrototype, "toUpperCase", createNativeFunctionObject("String.prototype.toUpperCase", (_args, _context, thisValue) =>
-    String(thisValue ?? "").toUpperCase()));
+  defineBuiltin(
+    stringPrototype,
+    "includes",
+    createNativeFunctionObject("String.prototype.includes", (args, _context, thisValue) =>
+      String(thisValue ?? "").includes(
+        String(args[0]),
+        args[1] === undefined ? undefined : Number(args[1]),
+      ),
+    ),
+  );
+  defineBuiltin(
+    stringPrototype,
+    "slice",
+    createNativeFunctionObject("String.prototype.slice", (args, _context, thisValue) =>
+      String(thisValue ?? "").slice(
+        args[0] === undefined ? undefined : Number(args[0]),
+        args[1] === undefined ? undefined : Number(args[1]),
+      ),
+    ),
+  );
+  defineBuiltin(
+    stringPrototype,
+    "split",
+    createNativeFunctionObject("String.prototype.split", (args, context, thisValue) => {
+      const separator = args[0] === undefined ? undefined : String(args[0]);
+      const input = String(thisValue ?? "");
+      return createGuestArray(
+        separator === undefined
+          ? [input]
+          : input.split(separator, args[1] === undefined ? undefined : Number(args[1])),
+        context,
+      );
+    }),
+  );
+  defineBuiltin(
+    stringPrototype,
+    "toUpperCase",
+    createNativeFunctionObject("String.prototype.toUpperCase", (_args, _context, thisValue) =>
+      String(thisValue ?? "").toUpperCase(),
+    ),
+  );
 
-  defineBuiltin(numberPrototype, "valueOf", createNativeFunctionObject("Number.prototype.valueOf", (_args, _context, thisValue) => Number(unboxPrimitive(thisValue))));
-  defineBuiltin(numberPrototype, "toString", createNativeFunctionObject("Number.prototype.toString", (_args, _context, thisValue) => String(Number(unboxPrimitive(thisValue)))));
-  defineBuiltin(bigintPrototype, "valueOf", createNativeFunctionObject("BigInt.prototype.valueOf", (_args, _context, thisValue) => {
-    const value = unboxPrimitive(thisValue);
-    if (typeof value !== "bigint") {
-      throwGuestError(_context, "TypeError", "BigInt.prototype.valueOf requires a BigInt value.");
-    }
-    return value;
-  }));
-  defineBuiltin(bigintPrototype, "toString", createNativeFunctionObject("BigInt.prototype.toString", (_args, _context, thisValue) => {
-    const value = unboxPrimitive(thisValue);
-    if (typeof value !== "bigint") {
-      throwGuestError(_context, "TypeError", "BigInt.prototype.toString requires a BigInt value.");
-    }
-    return value.toString();
-  }));
-  defineBuiltin(booleanPrototype, "valueOf", createNativeFunctionObject("Boolean.prototype.valueOf", (_args, _context, thisValue) => Boolean(unboxPrimitive(thisValue))));
-  defineBuiltin(booleanPrototype, "toString", createNativeFunctionObject("Boolean.prototype.toString", (_args, _context, thisValue) => String(Boolean(unboxPrimitive(thisValue)))));
-  defineBuiltin(symbolPrototype, "valueOf", createNativeFunctionObject("Symbol.prototype.valueOf", (_args, context, thisValue) => {
-    const value = unboxPrimitive(thisValue);
-    if (!isVMSymbol(value)) {
-      throwGuestError(context, "TypeError", "Symbol.prototype.valueOf requires a Symbol value.");
-    }
-    return value;
-  }));
-  defineBuiltin(symbolPrototype, "toString", createNativeFunctionObject("Symbol.prototype.toString", (_args, context, thisValue) => {
-    const value = unboxPrimitive(thisValue);
-    if (!isVMSymbol(value)) {
-      throwGuestError(context, "TypeError", "Symbol.prototype.toString requires a Symbol value.");
-    }
-    return describeVMSymbol(value);
-  }));
+  defineBuiltin(
+    numberPrototype,
+    "valueOf",
+    createNativeFunctionObject("Number.prototype.valueOf", (_args, _context, thisValue) =>
+      Number(unboxPrimitive(thisValue)),
+    ),
+  );
+  defineBuiltin(
+    numberPrototype,
+    "toString",
+    createNativeFunctionObject("Number.prototype.toString", (_args, _context, thisValue) =>
+      String(Number(unboxPrimitive(thisValue))),
+    ),
+  );
+  defineBuiltin(
+    bigintPrototype,
+    "valueOf",
+    createNativeFunctionObject("BigInt.prototype.valueOf", (_args, _context, thisValue) => {
+      const value = unboxPrimitive(thisValue);
+      if (typeof value !== "bigint") {
+        throwGuestError(_context, "TypeError", "BigInt.prototype.valueOf requires a BigInt value.");
+      }
+      return value;
+    }),
+  );
+  defineBuiltin(
+    bigintPrototype,
+    "toString",
+    createNativeFunctionObject("BigInt.prototype.toString", (_args, _context, thisValue) => {
+      const value = unboxPrimitive(thisValue);
+      if (typeof value !== "bigint") {
+        throwGuestError(
+          _context,
+          "TypeError",
+          "BigInt.prototype.toString requires a BigInt value.",
+        );
+      }
+      return value.toString();
+    }),
+  );
+  defineBuiltin(
+    booleanPrototype,
+    "valueOf",
+    createNativeFunctionObject("Boolean.prototype.valueOf", (_args, _context, thisValue) =>
+      Boolean(unboxPrimitive(thisValue)),
+    ),
+  );
+  defineBuiltin(
+    booleanPrototype,
+    "toString",
+    createNativeFunctionObject("Boolean.prototype.toString", (_args, _context, thisValue) =>
+      String(Boolean(unboxPrimitive(thisValue))),
+    ),
+  );
+  defineBuiltin(
+    symbolPrototype,
+    "valueOf",
+    createNativeFunctionObject("Symbol.prototype.valueOf", (_args, context, thisValue) => {
+      const value = unboxPrimitive(thisValue);
+      if (!isVMSymbol(value)) {
+        throwGuestError(context, "TypeError", "Symbol.prototype.valueOf requires a Symbol value.");
+      }
+      return value;
+    }),
+  );
+  defineBuiltin(
+    symbolPrototype,
+    "toString",
+    createNativeFunctionObject("Symbol.prototype.toString", (_args, context, thisValue) => {
+      const value = unboxPrimitive(thisValue);
+      if (!isVMSymbol(value)) {
+        throwGuestError(context, "TypeError", "Symbol.prototype.toString requires a Symbol value.");
+      }
+      return describeVMSymbol(value);
+    }),
+  );
 
-  defineBuiltin(regexpPrototype, "test", createNativeFunctionObject("RegExp.prototype.test", (args, _context, thisValue) =>
-    regexpExecInternal(toRegExpObject(thisValue), String(args[0])).matched));
-  defineBuiltin(regexpPrototype, "exec", createNativeFunctionObject("RegExp.prototype.exec", (args, context, thisValue) => {
-    const result = regexpExecInternal(toRegExpObject(thisValue), String(args[0]));
-    if (!result.matched || result.match === null) {
-      return null;
-    }
-    const array = createGuestArray(Array.from(result.match), context);
-    defineDataProperty(array, "index", result.match.index);
-    defineDataProperty(array, "input", result.match.input);
-    return array;
-  }));
+  defineBuiltin(
+    regexpPrototype,
+    "test",
+    createNativeFunctionObject(
+      "RegExp.prototype.test",
+      (args, _context, thisValue) =>
+        regexpExecInternal(toRegExpObject(thisValue), String(args[0])).matched,
+    ),
+  );
+  defineBuiltin(
+    regexpPrototype,
+    "exec",
+    createNativeFunctionObject("RegExp.prototype.exec", (args, context, thisValue) => {
+      const result = regexpExecInternal(toRegExpObject(thisValue), String(args[0]));
+      if (!result.matched || result.match === null) {
+        return null;
+      }
+      const array = createGuestArray(Array.from(result.match), context);
+      defineDataProperty(array, "index", result.match.index);
+      defineDataProperty(array, "input", result.match.input);
+      return array;
+    }),
+  );
 
-  defineBuiltin(DateConstructor, "now", createNativeFunctionObject("Date.now", (_args, context) => getIntrinsics(context).dateNow ?? Date.now()));
-  defineBuiltin(DateConstructor, "parse", createNativeFunctionObject("Date.parse", (args) => Date.parse(String(args[0]))));
-  defineBuiltin(DateConstructor, "UTC", createNativeFunctionObject("Date.UTC", (args) => dateUTC(args)));
-  defineBuiltin(datePrototype, "getTime", createNativeFunctionObject("Date.prototype.getTime", (_args, _context, thisValue) => assertDateSlot(toDateObject(thisValue)).time));
-  defineBuiltin(datePrototype, "toISOString", createNativeFunctionObject("Date.prototype.toISOString", (_args, _context, thisValue) => new Date(assertDateSlot(toDateObject(thisValue)).time).toISOString()));
+  defineBuiltin(
+    DateConstructor,
+    "now",
+    createNativeFunctionObject(
+      "Date.now",
+      (_args, context) => getIntrinsics(context).dateNow ?? Date.now(),
+    ),
+  );
+  defineBuiltin(
+    DateConstructor,
+    "parse",
+    createNativeFunctionObject("Date.parse", (args) => Date.parse(String(args[0]))),
+  );
+  defineBuiltin(
+    DateConstructor,
+    "UTC",
+    createNativeFunctionObject("Date.UTC", (args) => dateUTC(args)),
+  );
+  defineBuiltin(
+    datePrototype,
+    "getTime",
+    createNativeFunctionObject(
+      "Date.prototype.getTime",
+      (_args, _context, thisValue) => assertDateSlot(toDateObject(thisValue)).time,
+    ),
+  );
+  defineBuiltin(
+    datePrototype,
+    "toISOString",
+    createNativeFunctionObject("Date.prototype.toISOString", (_args, _context, thisValue) =>
+      new Date(assertDateSlot(toDateObject(thisValue)).time).toISOString(),
+    ),
+  );
 
-  defineBuiltin(mapPrototype, "get", createNativeFunctionObject("Map.prototype.get", (args, _context, thisValue) => {
-    const entry = findMapEntry(assertMapSlot(toMapObject(thisValue)), args[0]);
-    return entry?.value;
-  }));
-  defineBuiltin(mapPrototype, "set", createNativeFunctionObject("Map.prototype.set", (args, _context, thisValue) => {
-    const map = toMapObject(thisValue);
-    const slot = assertMapSlot(map);
-    const entry = findMapEntry(slot, args[0]);
-    if (entry === undefined) {
-      slot.entries.push({ key: args[0], value: args[1] });
-    } else {
-      entry.value = args[1];
-    }
-    return map;
-  }));
-  defineBuiltin(mapPrototype, "has", createNativeFunctionObject("Map.prototype.has", (args, _context, thisValue) => findMapEntry(assertMapSlot(toMapObject(thisValue)), args[0]) !== undefined));
-  defineBuiltin(mapPrototype, "delete", createNativeFunctionObject("Map.prototype.delete", (args, _context, thisValue) => {
-    const entries = assertMapSlot(toMapObject(thisValue)).entries;
-    const index = entries.findIndex((entry) => sameValueZero(entry.key, args[0]));
-    if (index < 0) return false;
-    entries.splice(index, 1);
-    return true;
-  }));
-  defineBuiltin(mapPrototype, "clear", createNativeFunctionObject("Map.prototype.clear", (_args, _context, thisValue) => {
-    assertMapSlot(toMapObject(thisValue)).entries.length = 0;
-    return undefined;
-  }));
-  defineBuiltin(mapPrototype, "forEach", createNativeFunctionObject("Map.prototype.forEach", async (args, context, thisValue) => {
-    const map = toMapObject(thisValue);
-    for (const entry of [...assertMapSlot(map).entries]) {
-      await invokeCallableValue(args[0], [entry.value, entry.key, map], context, args[1], args[1]);
-    }
-    return undefined;
-  }));
-  defineBuiltin(mapPrototype, "size", createNativeFunctionObject("get Map.prototype.size", (_args, _context, thisValue) => assertMapSlot(toMapObject(thisValue)).entries.length), { accessor: "get" });
+  defineBuiltin(
+    mapPrototype,
+    "get",
+    createNativeFunctionObject("Map.prototype.get", (args, _context, thisValue) => {
+      const entry = findMapEntry(assertMapSlot(toMapObject(thisValue)), args[0]);
+      return entry?.value;
+    }),
+  );
+  defineBuiltin(
+    mapPrototype,
+    "set",
+    createNativeFunctionObject("Map.prototype.set", (args, _context, thisValue) => {
+      const map = toMapObject(thisValue);
+      const slot = assertMapSlot(map);
+      const entry = findMapEntry(slot, args[0]);
+      if (entry === undefined) {
+        slot.entries.push({ key: args[0], value: args[1] });
+      } else {
+        entry.value = args[1];
+      }
+      return map;
+    }),
+  );
+  defineBuiltin(
+    mapPrototype,
+    "has",
+    createNativeFunctionObject(
+      "Map.prototype.has",
+      (args, _context, thisValue) =>
+        findMapEntry(assertMapSlot(toMapObject(thisValue)), args[0]) !== undefined,
+    ),
+  );
+  defineBuiltin(
+    mapPrototype,
+    "delete",
+    createNativeFunctionObject("Map.prototype.delete", (args, _context, thisValue) => {
+      const entries = assertMapSlot(toMapObject(thisValue)).entries;
+      const index = entries.findIndex((entry) => sameValueZero(entry.key, args[0]));
+      if (index < 0) return false;
+      entries.splice(index, 1);
+      return true;
+    }),
+  );
+  defineBuiltin(
+    mapPrototype,
+    "clear",
+    createNativeFunctionObject("Map.prototype.clear", (_args, _context, thisValue) => {
+      assertMapSlot(toMapObject(thisValue)).entries.length = 0;
+      return undefined;
+    }),
+  );
+  defineBuiltin(
+    mapPrototype,
+    "forEach",
+    createNativeFunctionObject("Map.prototype.forEach", async (args, context, thisValue) => {
+      const map = toMapObject(thisValue);
+      for (const entry of [...assertMapSlot(map).entries]) {
+        await invokeCallableValue(
+          args[0],
+          [entry.value, entry.key, map],
+          context,
+          args[1],
+          args[1],
+        );
+      }
+      return undefined;
+    }),
+  );
+  defineBuiltin(
+    mapPrototype,
+    "size",
+    createNativeFunctionObject(
+      "get Map.prototype.size",
+      (_args, _context, thisValue) => assertMapSlot(toMapObject(thisValue)).entries.length,
+    ),
+    { accessor: "get" },
+  );
 
-  defineBuiltin(setPrototype, "add", createNativeFunctionObject("Set.prototype.add", (args, _context, thisValue) => {
-    const set = toSetObject(thisValue);
-    const slot = assertSetSlot(set);
-    if (!slot.values.some((value) => sameValueZero(value, args[0]))) {
-      slot.values.push(args[0]);
-    }
-    return set;
-  }));
-  defineBuiltin(setPrototype, "has", createNativeFunctionObject("Set.prototype.has", (args, _context, thisValue) => assertSetSlot(toSetObject(thisValue)).values.some((value) => sameValueZero(value, args[0]))));
-  defineBuiltin(setPrototype, "delete", createNativeFunctionObject("Set.prototype.delete", (args, _context, thisValue) => {
-    const values = assertSetSlot(toSetObject(thisValue)).values;
-    const index = values.findIndex((value) => sameValueZero(value, args[0]));
-    if (index < 0) return false;
-    values.splice(index, 1);
-    return true;
-  }));
-  defineBuiltin(setPrototype, "clear", createNativeFunctionObject("Set.prototype.clear", (_args, _context, thisValue) => {
-    assertSetSlot(toSetObject(thisValue)).values.length = 0;
-    return undefined;
-  }));
-  defineBuiltin(setPrototype, "forEach", createNativeFunctionObject("Set.prototype.forEach", async (args, context, thisValue) => {
-    const set = toSetObject(thisValue);
-    for (const value of [...assertSetSlot(set).values]) {
-      await invokeCallableValue(args[0], [value, value, set], context, args[1], args[1]);
-    }
-    return undefined;
-  }));
-  defineBuiltin(setPrototype, "size", createNativeFunctionObject("get Set.prototype.size", (_args, _context, thisValue) => assertSetSlot(toSetObject(thisValue)).values.length), { accessor: "get" });
+  defineBuiltin(
+    setPrototype,
+    "add",
+    createNativeFunctionObject("Set.prototype.add", (args, _context, thisValue) => {
+      const set = toSetObject(thisValue);
+      const slot = assertSetSlot(set);
+      if (!slot.values.some((value) => sameValueZero(value, args[0]))) {
+        slot.values.push(args[0]);
+      }
+      return set;
+    }),
+  );
+  defineBuiltin(
+    setPrototype,
+    "has",
+    createNativeFunctionObject("Set.prototype.has", (args, _context, thisValue) =>
+      assertSetSlot(toSetObject(thisValue)).values.some((value) => sameValueZero(value, args[0])),
+    ),
+  );
+  defineBuiltin(
+    setPrototype,
+    "delete",
+    createNativeFunctionObject("Set.prototype.delete", (args, _context, thisValue) => {
+      const values = assertSetSlot(toSetObject(thisValue)).values;
+      const index = values.findIndex((value) => sameValueZero(value, args[0]));
+      if (index < 0) return false;
+      values.splice(index, 1);
+      return true;
+    }),
+  );
+  defineBuiltin(
+    setPrototype,
+    "clear",
+    createNativeFunctionObject("Set.prototype.clear", (_args, _context, thisValue) => {
+      assertSetSlot(toSetObject(thisValue)).values.length = 0;
+      return undefined;
+    }),
+  );
+  defineBuiltin(
+    setPrototype,
+    "forEach",
+    createNativeFunctionObject("Set.prototype.forEach", async (args, context, thisValue) => {
+      const set = toSetObject(thisValue);
+      for (const value of [...assertSetSlot(set).values]) {
+        await invokeCallableValue(args[0], [value, value, set], context, args[1], args[1]);
+      }
+      return undefined;
+    }),
+  );
+  defineBuiltin(
+    setPrototype,
+    "size",
+    createNativeFunctionObject(
+      "get Set.prototype.size",
+      (_args, _context, thisValue) => assertSetSlot(toSetObject(thisValue)).values.length,
+    ),
+    { accessor: "get" },
+  );
 
   intrinsics.globals.Object = ObjectConstructor;
   intrinsics.globals.Array = ArrayConstructor;
@@ -900,14 +1398,19 @@ function createIntrinsics(dateNow?: number): VMIntrinsics {
   intrinsics.globals.Reflect = ReflectObject;
   intrinsics.globals.Proxy = ProxyConstructor;
   intrinsics.globals.isNaN = createNativeFunctionObject("isNaN", async (args, context) =>
-    Number.isNaN(await toNumber(args[0], context)));
+    Number.isNaN(await toNumber(args[0], context)),
+  );
   intrinsics.globals.isFinite = createNativeFunctionObject("isFinite", async (args, context) =>
-    Number.isFinite(await toNumber(args[0], context)));
+    Number.isFinite(await toNumber(args[0], context)),
+  );
 
   return Object.freeze(intrinsics);
 }
 
-function ArrayConstructorRecord(args: readonly VMInternalValue[], context: VMExecutionContext): VMObject {
+function ArrayConstructorRecord(
+  args: readonly VMInternalValue[],
+  context: VMExecutionContext,
+): VMObject {
   if (args.length === 1 && typeof args[0] === "number") {
     const length = toArrayLength(args[0]);
     const array = createGuestArray([], context);
@@ -917,14 +1420,17 @@ function ArrayConstructorRecord(args: readonly VMInternalValue[], context: VMExe
   return createGuestArray(args, context);
 }
 
-function createErrorConstructors(intrinsics: VMIntrinsics): Readonly<Record<VMErrorName, VMObject>> {
+function createErrorConstructors(
+  intrinsics: VMIntrinsics,
+): Readonly<Record<VMErrorName, VMObject>> {
   const constructors = Object.create(null) as Record<VMErrorName, VMObject>;
   for (const name of Object.keys(intrinsics.errorPrototypes) as VMErrorName[]) {
     const prototype = intrinsics.errorPrototypes[name];
-    const constructor = createNativeFunctionObject(name, (args) =>
-      createErrorObject(name, args[0], intrinsics), {
-      construct: (args) => createErrorObject(name, args[0], intrinsics),
-    });
+    const constructor = createNativeFunctionObject(
+      name,
+      (args) => createErrorObject(name, args[0], intrinsics),
+      { construct: (args) => createErrorObject(name, args[0], intrinsics) },
+    );
     linkConstructor(constructor, prototype, name);
     defineBuiltinData(prototype, "name", name, {
       configurable: true,
@@ -948,11 +1454,12 @@ function createErrorObject(
 ): VMObject {
   const object = createOrdinaryObject(intrinsics.errorPrototypes[name]);
   if (messageValue !== undefined) {
-    defineBuiltinData(object, "message", isVMSymbol(messageValue) ? describeVMSymbol(messageValue) : String(messageValue), {
-      configurable: true,
-      enumerable: false,
-      writable: true,
-    });
+    defineBuiltinData(
+      object,
+      "message",
+      isVMSymbol(messageValue) ? describeVMSymbol(messageValue) : String(messageValue),
+      { configurable: true, enumerable: false, writable: true },
+    );
   }
   return object;
 }
@@ -964,8 +1471,16 @@ function createNativeFunctionObject(
 ): VMObject {
   const functionObject = createOrdinaryObject();
   nativeFunctionRecords.set(functionObject, { call, construct: options.construct });
-  defineBuiltinData(functionObject, "name", name, { configurable: true, enumerable: false, writable: false });
-  defineBuiltinData(functionObject, "length", call.length, { configurable: true, enumerable: false, writable: false });
+  defineBuiltinData(functionObject, "name", name, {
+    configurable: true,
+    enumerable: false,
+    writable: false,
+  });
+  defineBuiltinData(functionObject, "length", call.length, {
+    configurable: true,
+    enumerable: false,
+    writable: false,
+  });
   return functionObject;
 }
 
@@ -981,10 +1496,7 @@ function createProxyObject(
   }
 
   const proxy = createOrdinaryObject(getIntrinsics(context).objectPrototype);
-  proxySlots.set(proxy, {
-    handler: handlerValue,
-    target: targetValue,
-  });
+  proxySlots.set(proxy, { handler: handlerValue, target: targetValue });
   return proxy;
 }
 
@@ -1033,11 +1545,23 @@ async function proxyGet(
   const value = await invokeCallableValue(trap, [target, key, receiver], context, handler, handler);
   const descriptor = await getOwnPropertyDescriptorGuest(target, key, context);
   if (descriptor?.configurable === false) {
-    if (descriptor.kind === "data" && descriptor.writable === false && !sameValueZero(value, descriptor.value)) {
-      throw proxyInvariantError("get", "cannot report a different value for a non-configurable, non-writable property", key);
+    if (
+      descriptor.kind === "data" &&
+      descriptor.writable === false &&
+      !sameValueZero(value, descriptor.value)
+    ) {
+      throw proxyInvariantError(
+        "get",
+        "cannot report a different value for a non-configurable, non-writable property",
+        key,
+      );
     }
     if (descriptor.kind === "accessor" && descriptor.get === null && value !== undefined) {
-      throw proxyInvariantError("get", "cannot report a value for a non-configurable accessor without a getter", key);
+      throw proxyInvariantError(
+        "get",
+        "cannot report a value for a non-configurable accessor without a getter",
+        key,
+      );
     }
   }
   return value;
@@ -1056,51 +1580,77 @@ async function proxySet(
     return setGuestProperty(target, key, value, context, receiver);
   }
 
-  const accepted = isTruthy(await invokeCallableValue(trap, [target, key, value, receiver], context, handler, handler));
+  const accepted = isTruthy(
+    await invokeCallableValue(trap, [target, key, value, receiver], context, handler, handler),
+  );
   if (!accepted) {
     return false;
   }
 
   const descriptor = await getOwnPropertyDescriptorGuest(target, key, context);
   if (descriptor?.configurable === false) {
-    if (descriptor.kind === "data" && descriptor.writable === false && !sameValueZero(value, descriptor.value)) {
-      throw proxyInvariantError("set", "cannot change a non-configurable, non-writable property", key);
+    if (
+      descriptor.kind === "data" &&
+      descriptor.writable === false &&
+      !sameValueZero(value, descriptor.value)
+    ) {
+      throw proxyInvariantError(
+        "set",
+        "cannot change a non-configurable, non-writable property",
+        key,
+      );
     }
     if (descriptor.kind === "accessor" && descriptor.set === null) {
-      throw proxyInvariantError("set", "cannot set a non-configurable accessor without a setter", key);
+      throw proxyInvariantError(
+        "set",
+        "cannot set a non-configurable accessor without a setter",
+        key,
+      );
     }
   }
   return true;
 }
 
-async function proxyHas(proxy: VMObject, key: VMPropertyKey, context: VMExecutionContext): Promise<boolean> {
+async function proxyHas(
+  proxy: VMObject,
+  key: VMPropertyKey,
+  context: VMExecutionContext,
+): Promise<boolean> {
   const { handler, target } = getProxySlot(proxy);
   const trap = await getTrapMethod(handler, "has", context);
   if (trap === undefined) {
     return hasGuestProperty(target, key, context);
   }
 
-  const result = isTruthy(await invokeCallableValue(trap, [target, key], context, handler, handler));
+  const result = isTruthy(
+    await invokeCallableValue(trap, [target, key], context, handler, handler),
+  );
   if (!result) {
     const descriptor = await getOwnPropertyDescriptorGuest(target, key, context);
     if (descriptor?.configurable === false) {
       throw proxyInvariantError("has", "cannot hide a non-configurable property", key);
     }
-    if (descriptor !== undefined && !await isExtensibleGuest(target, context)) {
+    if (descriptor !== undefined && !(await isExtensibleGuest(target, context))) {
       throw proxyInvariantError("has", "cannot hide a property on a non-extensible target", key);
     }
   }
   return result;
 }
 
-async function proxyDeleteProperty(proxy: VMObject, key: VMPropertyKey, context: VMExecutionContext): Promise<boolean> {
+async function proxyDeleteProperty(
+  proxy: VMObject,
+  key: VMPropertyKey,
+  context: VMExecutionContext,
+): Promise<boolean> {
   const { handler, target } = getProxySlot(proxy);
   const trap = await getTrapMethod(handler, "deleteProperty", context);
   if (trap === undefined) {
     return deleteGuestProperty(target, key, context);
   }
 
-  const result = isTruthy(await invokeCallableValue(trap, [target, key], context, handler, handler));
+  const result = isTruthy(
+    await invokeCallableValue(trap, [target, key], context, handler, handler),
+  );
   if (!result) {
     return false;
   }
@@ -1109,13 +1659,20 @@ async function proxyDeleteProperty(proxy: VMObject, key: VMPropertyKey, context:
   if (descriptor?.configurable === false) {
     throw proxyInvariantError("deleteProperty", "cannot delete a non-configurable property", key);
   }
-  if (descriptor !== undefined && !await isExtensibleGuest(target, context)) {
-    throw proxyInvariantError("deleteProperty", "cannot report deletion of a property on a non-extensible target", key);
+  if (descriptor !== undefined && !(await isExtensibleGuest(target, context))) {
+    throw proxyInvariantError(
+      "deleteProperty",
+      "cannot report deletion of a property on a non-extensible target",
+      key,
+    );
   }
   return true;
 }
 
-async function proxyOwnKeys(proxy: VMObject, context: VMExecutionContext): Promise<readonly VMPropertyKey[]> {
+async function proxyOwnKeys(
+  proxy: VMObject,
+  context: VMExecutionContext,
+): Promise<readonly VMPropertyKey[]> {
   const { handler, target } = getProxySlot(proxy);
   const trap = await getTrapMethod(handler, "ownKeys", context);
   if (trap === undefined) {
@@ -1149,16 +1706,24 @@ async function proxyOwnKeys(proxy: VMObject, context: VMExecutionContext): Promi
     }
   }
 
-  if (!await isExtensibleGuest(target, context)) {
+  if (!(await isExtensibleGuest(target, context))) {
     for (const key of targetKeys) {
       if (!seen.has(key)) {
-        throw proxyInvariantError("ownKeys", "cannot omit target keys for a non-extensible target", key);
+        throw proxyInvariantError(
+          "ownKeys",
+          "cannot omit target keys for a non-extensible target",
+          key,
+        );
       }
     }
     const targetKeySet = new Set(targetKeys);
     for (const key of keys) {
       if (!targetKeySet.has(key)) {
-        throw proxyInvariantError("ownKeys", "cannot report extra keys for a non-extensible target", key);
+        throw proxyInvariantError(
+          "ownKeys",
+          "cannot report extra keys for a non-extensible target",
+          key,
+        );
       }
     }
   }
@@ -1183,16 +1748,32 @@ async function proxyGetOwnPropertyDescriptor(
 
   if (trapResult === undefined || trapResult === null) {
     if (targetDescriptor?.configurable === false) {
-      throw proxyInvariantError("getOwnPropertyDescriptor", "cannot hide a non-configurable property", key);
+      throw proxyInvariantError(
+        "getOwnPropertyDescriptor",
+        "cannot hide a non-configurable property",
+        key,
+      );
     }
     if (targetDescriptor !== undefined && !targetExtensible) {
-      throw proxyInvariantError("getOwnPropertyDescriptor", "cannot hide a property on a non-extensible target", key);
+      throw proxyInvariantError(
+        "getOwnPropertyDescriptor",
+        "cannot hide a property on a non-extensible target",
+        key,
+      );
     }
     return undefined;
   }
 
-  const descriptor = completePropertyDescriptor(await descriptorFromGuestObject(trapResult, context));
-  validateProxyDescriptorReport("getOwnPropertyDescriptor", key, descriptor, targetDescriptor, targetExtensible);
+  const descriptor = completePropertyDescriptor(
+    await descriptorFromGuestObject(trapResult, context),
+  );
+  validateProxyDescriptorReport(
+    "getOwnPropertyDescriptor",
+    key,
+    descriptor,
+    targetDescriptor,
+    targetExtensible,
+  );
   return descriptor;
 }
 
@@ -1208,8 +1789,13 @@ async function proxyDefineProperty(
     return definePropertyGuest(target, key, descriptor, context);
   }
 
-  const descriptorObject = createGuestDescriptorObject(completePropertyDescriptor(descriptor), context);
-  const accepted = isTruthy(await invokeCallableValue(trap, [target, key, descriptorObject], context, handler, handler));
+  const descriptorObject = createGuestDescriptorObject(
+    completePropertyDescriptor(descriptor),
+    context,
+  );
+  const accepted = isTruthy(
+    await invokeCallableValue(trap, [target, key, descriptorObject], context, handler, handler),
+  );
   if (!accepted) {
     return false;
   }
@@ -1218,13 +1804,26 @@ async function proxyDefineProperty(
   const targetDescriptor = await getOwnPropertyDescriptorGuest(target, key, context);
   const targetExtensible = await isExtensibleGuest(target, context);
   if (targetDescriptor === undefined && !targetExtensible) {
-    throw proxyInvariantError("defineProperty", "cannot add a property to a non-extensible target", key);
+    throw proxyInvariantError(
+      "defineProperty",
+      "cannot add a property to a non-extensible target",
+      key,
+    );
   }
-  validateProxyDescriptorReport("defineProperty", key, completeDescriptor, targetDescriptor, targetExtensible);
+  validateProxyDescriptorReport(
+    "defineProperty",
+    key,
+    completeDescriptor,
+    targetDescriptor,
+    targetExtensible,
+  );
   return true;
 }
 
-async function proxyGetPrototypeOf(proxy: VMObject, context: VMExecutionContext): Promise<VMObject | null> {
+async function proxyGetPrototypeOf(
+  proxy: VMObject,
+  context: VMExecutionContext,
+): Promise<VMObject | null> {
   const { handler, target } = getProxySlot(proxy);
   const trap = await getTrapMethod(handler, "getPrototypeOf", context);
   if (trap === undefined) {
@@ -1237,8 +1836,11 @@ async function proxyGetPrototypeOf(proxy: VMObject, context: VMExecutionContext)
   }
 
   const targetPrototype = await getPrototypeOfGuest(target, context);
-  if (!await isExtensibleGuest(target, context) && prototype !== targetPrototype) {
-    throw proxyInvariantError("getPrototypeOf", "cannot report a different prototype for a non-extensible target");
+  if (!(await isExtensibleGuest(target, context)) && prototype !== targetPrototype) {
+    throw proxyInvariantError(
+      "getPrototypeOf",
+      "cannot report a different prototype for a non-extensible target",
+    );
   }
   return prototype;
 }
@@ -1258,14 +1860,19 @@ async function proxySetPrototypeOf(
     return setPrototypeOfGuest(target, prototype, context);
   }
 
-  const accepted = isTruthy(await invokeCallableValue(trap, [target, prototype], context, handler, handler));
+  const accepted = isTruthy(
+    await invokeCallableValue(trap, [target, prototype], context, handler, handler),
+  );
   if (!accepted) {
     return false;
   }
 
   const targetPrototype = await getPrototypeOfGuest(target, context);
-  if (!await isExtensibleGuest(target, context) && prototype !== targetPrototype) {
-    throw proxyInvariantError("setPrototypeOf", "cannot change the prototype of a non-extensible target");
+  if (!(await isExtensibleGuest(target, context)) && prototype !== targetPrototype) {
+    throw proxyInvariantError(
+      "setPrototypeOf",
+      "cannot change the prototype of a non-extensible target",
+    );
   }
   return true;
 }
@@ -1284,15 +1891,21 @@ async function proxyIsExtensible(proxy: VMObject, context: VMExecutionContext): 
   return result;
 }
 
-async function proxyPreventExtensions(proxy: VMObject, context: VMExecutionContext): Promise<boolean> {
+async function proxyPreventExtensions(
+  proxy: VMObject,
+  context: VMExecutionContext,
+): Promise<boolean> {
   const { handler, target } = getProxySlot(proxy);
   const trap = await getTrapMethod(handler, "preventExtensions", context);
   if (trap === undefined) {
     return preventExtensionsGuest(target, context);
   }
   const accepted = isTruthy(await invokeCallableValue(trap, [target], context, handler, handler));
-  if (accepted && await isExtensibleGuest(target, context)) {
-    throw proxyInvariantError("preventExtensions", "cannot report success while target is still extensible");
+  if (accepted && (await isExtensibleGuest(target, context))) {
+    throw proxyInvariantError(
+      "preventExtensions",
+      "cannot report success while target is still extensible",
+    );
   }
   return accepted;
 }
@@ -1366,23 +1979,26 @@ function defineBuiltin(
   value: VMObject,
   options: { readonly accessor?: "get" } = {},
 ): void {
-  const defined = options.accessor === "get"
-    ? defineOwnProperty(object, key, {
-        configurable: true,
-        enumerable: false,
-        get: value,
-        kind: "accessor",
-      })
-    : defineOwnProperty(object, key, {
-        configurable: true,
-        enumerable: false,
-        kind: "data",
-        value,
-        writable: true,
-      });
+  const defined =
+    options.accessor === "get"
+      ? defineOwnProperty(object, key, {
+          configurable: true,
+          enumerable: false,
+          get: value,
+          kind: "accessor",
+        })
+      : defineOwnProperty(object, key, {
+          configurable: true,
+          enumerable: false,
+          kind: "data",
+          value,
+          writable: true,
+        });
 
   if (!defined) {
-    throw runtimeError("Unable to define VM intrinsic property.", { path: propertyKeyToString(key) });
+    throw runtimeError("Unable to define VM intrinsic property.", {
+      path: propertyKeyToString(key),
+    });
   }
 }
 
@@ -1431,7 +2047,10 @@ function createGuestObject(context: VMExecutionContext): VMObject {
   return createOrdinaryObject(getIntrinsics(context).objectPrototype);
 }
 
-function createGuestArray(elements: readonly VMInternalValue[], context: VMExecutionContext): VMObject {
+function createGuestArray(
+  elements: readonly VMInternalValue[],
+  context: VMExecutionContext,
+): VMObject {
   return createArrayLikeObject(elements, getIntrinsics(context).arrayPrototype);
 }
 
@@ -1477,7 +2096,11 @@ async function objectToString(
   }
 
   const object = toObject(value, context);
-  const tag = await getGuestProperty(object, getIntrinsics(context).wellKnownSymbols.toStringTag, context);
+  const tag = await getGuestProperty(
+    object,
+    getIntrinsics(context).wellKnownSymbols.toStringTag,
+    context,
+  );
   if (typeof tag === "string") {
     return `[object ${tag}]`;
   }
@@ -1562,7 +2185,11 @@ async function toBigIntConstructorValue(
   }
   if (typeof primitive === "number") {
     if (!Number.isInteger(primitive)) {
-      throwGuestError(context, "RangeError", "The number cannot be converted to a BigInt because it is not an integer.");
+      throwGuestError(
+        context,
+        "RangeError",
+        "The number cannot be converted to a BigInt because it is not an integer.",
+      );
     }
     return BigInt(primitive);
   }
@@ -1593,17 +2220,25 @@ async function descriptorFromGuestObject(
     const get = descriptor.get;
     const set = descriptor.set;
     if (get !== undefined && get !== null && !isCallableValue(get)) {
-      throwGuestError(context, "TypeError", "Property descriptor getter must be callable or nullish.");
+      throwGuestError(
+        context,
+        "TypeError",
+        "Property descriptor getter must be callable or nullish.",
+      );
     }
     if (set !== undefined && set !== null && !isCallableValue(set)) {
-      throwGuestError(context, "TypeError", "Property descriptor setter must be callable or nullish.");
+      throwGuestError(
+        context,
+        "TypeError",
+        "Property descriptor setter must be callable or nullish.",
+      );
     }
     return {
       configurable: Boolean(descriptor.configurable),
       enumerable: Boolean(descriptor.enumerable),
-      get: get === undefined ? null : get as VMObject,
+      get: get === undefined ? null : (get as VMObject),
       kind: "accessor",
-      set: set === undefined ? null : set as VMObject,
+      set: set === undefined ? null : (set as VMObject),
     };
   }
 
@@ -1616,7 +2251,10 @@ async function descriptorFromGuestObject(
   };
 }
 
-function createGuestDescriptorObject(descriptor: VMPropertyDescriptor, context: VMExecutionContext): VMObject {
+function createGuestDescriptorObject(
+  descriptor: VMPropertyDescriptor,
+  context: VMExecutionContext,
+): VMObject {
   const object = createGuestObject(context);
   if (descriptor.kind === "data") {
     defineDataProperty(object, "value", descriptor.value);
@@ -1630,15 +2268,33 @@ function createGuestDescriptorObject(descriptor: VMPropertyDescriptor, context: 
   return object;
 }
 
-function createRegExpFromArgs(args: readonly VMInternalValue[], intrinsics: VMIntrinsics): VMObject {
+function createRegExpFromArgs(
+  args: readonly VMInternalValue[],
+  intrinsics: VMIntrinsics,
+): VMObject {
   if (isVMObject(args[0]) && regexpSlots.has(args[0]) && args[1] === undefined) {
     const slot = assertRegExpSlot(args[0]);
-    return createRegExpObject(slot.regexp.source, slot.regexp.flags, slot.regexp.lastIndex, intrinsics);
+    return createRegExpObject(
+      slot.regexp.source,
+      slot.regexp.flags,
+      slot.regexp.lastIndex,
+      intrinsics,
+    );
   }
-  return createRegExpObject(String(args[0] ?? ""), args[1] === undefined ? undefined : String(args[1]), 0, intrinsics);
+  return createRegExpObject(
+    String(args[0] ?? ""),
+    args[1] === undefined ? undefined : String(args[1]),
+    0,
+    intrinsics,
+  );
 }
 
-function createRegExpObject(source: string, flags: string | undefined, lastIndex: number, intrinsics: VMIntrinsics): VMObject {
+function createRegExpObject(
+  source: string,
+  flags: string | undefined,
+  lastIndex: number,
+  intrinsics: VMIntrinsics,
+): VMObject {
   const object = createOrdinaryObject(intrinsics.regexpPrototype);
   const regexp = new RegExp(source, flags);
   regexp.lastIndex = lastIndex;
@@ -1666,17 +2322,17 @@ function toRegExpObject(value: VMInternalValue | undefined): VMObject {
   return value;
 }
 
-function regexpExecInternal(object: VMObject, input: string): { readonly matched: boolean; readonly match: RegExpExecArray | null } {
+function regexpExecInternal(
+  object: VMObject,
+  input: string,
+): { readonly matched: boolean; readonly match: RegExpExecArray | null } {
   const slot = assertRegExpSlot(object);
   const lastIndex = getOwnPropertyDescriptor(object, "lastIndex");
   if (lastIndex?.kind === "data") {
     slot.regexp.lastIndex = Number(lastIndex.value);
   }
   const match = slot.regexp.exec(input);
-  defineOwnProperty(object, "lastIndex", {
-    kind: "data",
-    value: slot.regexp.lastIndex,
-  });
+  defineOwnProperty(object, "lastIndex", { kind: "data", value: slot.regexp.lastIndex });
   return { matched: match !== null, match };
 }
 
@@ -1687,15 +2343,18 @@ function createDateFromArgs(args: readonly VMInternalValue[], intrinsics: VMIntr
   if (args.length === 1) {
     return createDateObject(new Date(args[0] as string | number | Date).getTime(), intrinsics);
   }
-  return createDateObject(new Date(
-    Number(args[0]),
-    Number(args[1] ?? 0),
-    Number(args[2] ?? 1),
-    Number(args[3] ?? 0),
-    Number(args[4] ?? 0),
-    Number(args[5] ?? 0),
-    Number(args[6] ?? 0),
-  ).getTime(), intrinsics);
+  return createDateObject(
+    new Date(
+      Number(args[0]),
+      Number(args[1] ?? 0),
+      Number(args[2] ?? 1),
+      Number(args[3] ?? 0),
+      Number(args[4] ?? 0),
+      Number(args[5] ?? 0),
+      Number(args[6] ?? 0),
+    ).getTime(),
+    intrinsics,
+  );
 }
 
 function createDateObject(time: number, intrinsics: VMIntrinsics): VMObject {
@@ -1719,7 +2378,10 @@ function toDateObject(value: VMInternalValue | undefined): VMObject {
   return value;
 }
 
-function createMapObject(entries: readonly (readonly [VMInternalValue, VMInternalValue])[], intrinsics: VMIntrinsics): VMObject {
+function createMapObject(
+  entries: readonly (readonly [VMInternalValue, VMInternalValue])[],
+  intrinsics: VMIntrinsics,
+): VMObject {
   const object = createOrdinaryObject(intrinsics.mapPrototype);
   mapSlots.set(object, { entries: entries.map(([key, value]) => ({ key, value })) });
   return object;
@@ -1767,7 +2429,10 @@ function toSetObject(value: VMInternalValue | undefined): VMObject {
   return value;
 }
 
-function findMapEntry(slot: VMMapSlot, key: VMInternalValue): { key: VMInternalValue; value: VMInternalValue } | undefined {
+function findMapEntry(
+  slot: VMMapSlot,
+  key: VMInternalValue,
+): { key: VMInternalValue; value: VMInternalValue } | undefined {
   return slot.entries.find((entry) => sameValueZero(entry.key, key));
 }
 
@@ -1775,7 +2440,10 @@ function sameValueZero(left: VMInternalValue, right: VMInternalValue): boolean {
   return left === right || (Number.isNaN(left) && Number.isNaN(right));
 }
 
-async function iterableEntries(value: VMInternalValue, context: VMExecutionContext): Promise<readonly (readonly [VMInternalValue, VMInternalValue])[]> {
+async function iterableEntries(
+  value: VMInternalValue,
+  context: VMExecutionContext,
+): Promise<readonly (readonly [VMInternalValue, VMInternalValue])[]> {
   if (value === undefined || value === null) {
     return [];
   }
@@ -1785,10 +2453,14 @@ async function iterableEntries(value: VMInternalValue, context: VMExecutionConte
   if (isArrayLikeObject(value)) {
     const keys = await ownKeysGuest(value, context);
     const entries: Array<readonly [VMInternalValue, VMInternalValue]> = [];
-    for (const key of keys.filter((key): key is string => typeof key === "string" && isArrayIndex(key))) {
+    for (const key of keys.filter(
+      (key): key is string => typeof key === "string" && isArrayIndex(key),
+    )) {
       const entry = await getGuestProperty(value, key, context);
       if (!isArrayLikeObject(entry)) {
-        throw runtimeError("Map iterable entries must be VM arrays.", { reason: "invalid iterable" });
+        throw runtimeError("Map iterable entries must be VM arrays.", {
+          reason: "invalid iterable",
+        });
       }
       entries.push([
         await getGuestProperty(entry, "0", context),
@@ -1806,7 +2478,10 @@ async function iterableEntries(value: VMInternalValue, context: VMExecutionConte
   });
 }
 
-async function iterableValues(value: VMInternalValue, context: VMExecutionContext): Promise<readonly VMInternalValue[]> {
+async function iterableValues(
+  value: VMInternalValue,
+  context: VMExecutionContext,
+): Promise<readonly VMInternalValue[]> {
   if (value === undefined || value === null) {
     return [];
   }
@@ -1814,11 +2489,15 @@ async function iterableValues(value: VMInternalValue, context: VMExecutionContex
     return [...assertSetSlot(value).values];
   }
   if (isVMObject(value) && mapSlots.has(value)) {
-    return assertMapSlot(value).entries.map((entry) => createGuestArray([entry.key, entry.value], context));
+    return assertMapSlot(value).entries.map((entry) =>
+      createGuestArray([entry.key, entry.value], context),
+    );
   }
   if (isArrayLikeObject(value)) {
     const values: VMInternalValue[] = [];
-    for (const key of (await ownKeysGuest(value, context)).filter((key): key is string => typeof key === "string" && isArrayIndex(key))) {
+    for (const key of (await ownKeysGuest(value, context)).filter(
+      (key): key is string => typeof key === "string" && isArrayIndex(key),
+    )) {
       values.push(await getGuestProperty(value, key, context));
     }
     return values;
@@ -1832,9 +2511,14 @@ async function iterableValues(value: VMInternalValue, context: VMExecutionContex
   });
 }
 
-async function iterableValuesAsync(value: VMInternalValue, context: VMExecutionContext): Promise<readonly VMInternalValue[]> {
+async function iterableValuesAsync(
+  value: VMInternalValue,
+  context: VMExecutionContext,
+): Promise<readonly VMInternalValue[]> {
   if (value === undefined || value === null) {
-    throw runtimeError("Array.from requires an iterable or array-like value.", { reason: "nullish iterable" });
+    throw runtimeError("Array.from requires an iterable or array-like value.", {
+      reason: "nullish iterable",
+    });
   }
   if (typeof value === "string") {
     return [...value];
@@ -1843,7 +2527,9 @@ async function iterableValuesAsync(value: VMInternalValue, context: VMExecutionC
     return [...assertSetSlot(value).values];
   }
   if (isVMObject(value) && mapSlots.has(value)) {
-    return assertMapSlot(value).entries.map((entry) => createGuestArray([entry.key, entry.value], context));
+    return assertMapSlot(value).entries.map((entry) =>
+      createGuestArray([entry.key, entry.value], context),
+    );
   }
   const object = toObject(value, context);
   if (isArrayLikeObject(object)) {
@@ -1857,7 +2543,9 @@ async function iterableValuesAsync(value: VMInternalValue, context: VMExecutionC
     }
     return output;
   }
-  throw runtimeError("Array.from requires an iterable or array-like value.", { reason: "unsupported iterator" });
+  throw runtimeError("Array.from requires an iterable or array-like value.", {
+    reason: "unsupported iterator",
+  });
 }
 
 function createArrayBufferObject(buffer: ArrayBuffer, intrinsics: VMIntrinsics): VMObject {
@@ -1872,7 +2560,11 @@ function createArrayBufferObject(buffer: ArrayBuffer, intrinsics: VMIntrinsics):
   return object;
 }
 
-function createTypedArrayObject(type: string, bytes: readonly number[], intrinsics: VMIntrinsics): VMObject {
+function createTypedArrayObject(
+  type: string,
+  bytes: readonly number[],
+  intrinsics: VMIntrinsics,
+): VMObject {
   const object = createArrayLikeObject([], intrinsics.typedArrayPrototype);
   typedArraySlots.set(object, { bytes: [...bytes], type });
   defineBuiltinData(object, "byteLength", bytes.length, {
@@ -1905,18 +2597,30 @@ function bytesToArrayBuffer(bytes: readonly number[]): ArrayBuffer {
 function reconstructTypedArrayForBoundary(type: string, bytes: readonly number[]): VMInternalValue {
   const buffer = bytesToArrayBuffer(bytes);
   switch (type) {
-    case "Int8Array": return new Int8Array(buffer);
-    case "Uint8Array": return new Uint8Array(buffer);
-    case "Uint8ClampedArray": return new Uint8ClampedArray(buffer);
-    case "Int16Array": return new Int16Array(buffer);
-    case "Uint16Array": return new Uint16Array(buffer);
-    case "Int32Array": return new Int32Array(buffer);
-    case "Uint32Array": return new Uint32Array(buffer);
-    case "Float32Array": return new Float32Array(buffer);
-    case "Float64Array": return new Float64Array(buffer);
-    case "BigInt64Array": return new BigInt64Array(buffer);
-    case "BigUint64Array": return new BigUint64Array(buffer);
-    default: return new Uint8Array(buffer);
+    case "Int8Array":
+      return new Int8Array(buffer);
+    case "Uint8Array":
+      return new Uint8Array(buffer);
+    case "Uint8ClampedArray":
+      return new Uint8ClampedArray(buffer);
+    case "Int16Array":
+      return new Int16Array(buffer);
+    case "Uint16Array":
+      return new Uint16Array(buffer);
+    case "Int32Array":
+      return new Int32Array(buffer);
+    case "Uint32Array":
+      return new Uint32Array(buffer);
+    case "Float32Array":
+      return new Float32Array(buffer);
+    case "Float64Array":
+      return new Float64Array(buffer);
+    case "BigInt64Array":
+      return new BigInt64Array(buffer);
+    case "BigUint64Array":
+      return new BigUint64Array(buffer);
+    default:
+      return new Uint8Array(buffer);
   }
 }
 
@@ -2043,7 +2747,10 @@ function getDynamicCodeParts(args: readonly unknown[]): {
 
   return {
     body: String(args[args.length - 1]),
-    parameters: args.slice(0, -1).map((arg) => String(arg)).join(","),
+    parameters: args
+      .slice(0, -1)
+      .map((arg) => String(arg))
+      .join(","),
   };
 }
 
@@ -2127,11 +2834,7 @@ function defineGlobalObjectProperty(
     readonly configurable: boolean;
     readonly enumerable: boolean;
     readonly writable: boolean;
-  } = {
-    configurable: true,
-    enumerable: true,
-    writable: true,
-  },
+  } = { configurable: true, enumerable: true, writable: true },
 ): void {
   const defined = defineOwnProperty(globalObject, name, {
     configurable: options.configurable,
@@ -2264,7 +2967,7 @@ export async function invokeGuestCallableForHost(
   try {
     const intrinsics = getIntrinsics(context);
     const importedArgs = args.map((arg, index) =>
-      importGuestValue(arg, `<host-rpc-arg>[${index}]`, intrinsics)
+      importGuestValue(arg, `<host-rpc-arg>[${index}]`, intrinsics),
     );
     const result = await invokeCallableValue(
       callable as VMInternalValue,
@@ -2395,12 +3098,7 @@ async function executeClassDeclaration(
 
   const target = context.lexicalEnvironment;
   if (!target.hasOwn(name)) {
-    target.define(name, {
-      kind: "const",
-      mutable: false,
-      deletable: false,
-      initialized: false,
-    });
+    target.define(name, { kind: "const", mutable: false, deletable: false, initialized: false });
   }
 
   await evaluateClass(declaration, context, {
@@ -2503,7 +3201,11 @@ async function executeForStatement(
 
     while (true) {
       const test = statement.test;
-      if (test !== null && test !== undefined && !isTruthy(await evaluateExpression(asNode(test), context))) {
+      if (
+        test !== null &&
+        test !== undefined &&
+        !isTruthy(await evaluateExpression(asNode(test), context))
+      ) {
         return normalCompletion();
       }
 
@@ -2604,7 +3306,7 @@ async function executeSwitchStatement(
       continue;
     }
 
-    if (discriminant === await evaluateExpression(asNode(cases[index].test), context)) {
+    if (discriminant === (await evaluateExpression(asNode(cases[index].test), context))) {
       matched = true;
       defaultIndex = index;
       break;
@@ -2621,7 +3323,10 @@ async function executeSwitchStatement(
     }
     matched = true;
 
-    const completion = await executeStatementList(getNodeArray(cases[index], "consequent"), context);
+    const completion = await executeStatementList(
+      getNodeArray(cases[index], "consequent"),
+      context,
+    );
     if (completion.type === "break") {
       return normalCompletion();
     }
@@ -2651,9 +3356,10 @@ async function executeTryStatement(
     }
     completion = throwCompletion(error.value);
   }
-  const handler = statement.handler === null || statement.handler === undefined
-    ? undefined
-    : asNode(statement.handler);
+  const handler =
+    statement.handler === null || statement.handler === undefined
+      ? undefined
+      : asNode(statement.handler);
 
   if (completion.type === "throw" && handler !== undefined) {
     const environment = context.enterLexicalEnvironment();
@@ -2708,7 +3414,10 @@ async function executeVariableDeclaration(
   for (const declarator of getNodeArray(declaration, "declarations")) {
     const id = getNode(declarator, "id");
     const init = declarator.init;
-    const value = init === null || init === undefined ? undefined : await evaluateExpression(asNode(init), context);
+    const value =
+      init === null || init === undefined
+        ? undefined
+        : await evaluateExpression(asNode(init), context);
 
     if (id.type !== "Identifier") {
       if (init === null || init === undefined) {
@@ -2869,7 +3578,9 @@ async function evaluateObjectExpression(
 
   for (const property of getNodeArray(expression, "properties")) {
     if (property.type === "SpreadElement") {
-      const spreadValue = asGuestObject(await evaluateExpression(getNode(property, "argument"), context));
+      const spreadValue = asGuestObject(
+        await evaluateExpression(getNode(property, "argument"), context),
+      );
       for (const key of await getEnumerableOwnStringKeys(spreadValue, context)) {
         defineDataProperty(object, key, await getGuestProperty(spreadValue, key, context));
       }
@@ -2877,18 +3588,25 @@ async function evaluateObjectExpression(
     }
 
     if (property.type !== "Property") {
-      throw unsupportedNode(property, "Only plain object properties and object spread are supported.");
+      throw unsupportedNode(
+        property,
+        "Only plain object properties and object spread are supported.",
+      );
     }
 
     const key = await propertyKeyFromProperty(property, context);
 
     if (property.kind === "get" || property.kind === "set") {
-      const accessor = createUserFunction(getNode(property, "value"), context, propertyKeyToFunctionName(key), {
-        constructable: false,
-      });
-      const descriptor = property.kind === "get"
-        ? { configurable: true, enumerable: true, get: accessor, kind: "accessor" as const }
-        : { configurable: true, enumerable: true, kind: "accessor" as const, set: accessor };
+      const accessor = createUserFunction(
+        getNode(property, "value"),
+        context,
+        propertyKeyToFunctionName(key),
+        { constructable: false },
+      );
+      const descriptor =
+        property.kind === "get"
+          ? { configurable: true, enumerable: true, get: accessor, kind: "accessor" as const }
+          : { configurable: true, enumerable: true, kind: "accessor" as const, set: accessor };
 
       if (!defineOwnProperty(object, key, descriptor)) {
         throw runtimeError("Unable to define VM object accessor.", {
@@ -2903,9 +3621,12 @@ async function evaluateObjectExpression(
       throw unsupportedNode(property, "Unsupported object property kind.");
     }
 
-    const value = property.method === true
-      ? createUserFunction(getNode(property, "value"), context, propertyKeyToFunctionName(key), { constructable: false })
-      : await evaluateExpression(getNode(property, "value"), context);
+    const value =
+      property.method === true
+        ? createUserFunction(getNode(property, "value"), context, propertyKeyToFunctionName(key), {
+            constructable: false,
+          })
+        : await evaluateExpression(getNode(property, "value"), context);
     defineDataProperty(object, key, value);
   }
 
@@ -2918,12 +3639,12 @@ async function evaluateClass(
   options: VMClassEvaluationOptions = {},
 ): Promise<VMUserFunction> {
   const superNode = node.superClass;
-  const superClass = superNode === null || superNode === undefined
-    ? undefined
-    : await evaluateClassHeritage(asNode(superNode), context);
-  const superPrototype = superClass === undefined
-    ? null
-    : await getClassPrototype(superClass, context);
+  const superClass =
+    superNode === null || superNode === undefined
+      ? undefined
+      : await evaluateClassHeritage(asNode(superNode), context);
+  const superPrototype =
+    superClass === undefined ? null : await getClassPrototype(superClass, context);
   const className = options.nameHint ?? "";
   const classEnvironment = createClassNameEnvironment(node, context, className);
   const previousLexical = context.lexicalEnvironment;
@@ -2936,11 +3657,14 @@ async function evaluateClass(
     const elements = getNodeArray(getNode(node, "body"), "body");
     const privateEnvironment = collectPrivateNames(elements);
     const constructorMethod = findConstructorMethod(elements);
-    const prototype = createOrdinaryObject(superPrototype ?? getIntrinsics(context).objectPrototype);
+    const prototype = createOrdinaryObject(
+      superPrototype ?? getIntrinsics(context).objectPrototype,
+    );
     const constructor = createOrdinaryObject(superClass ?? null) as VMUserFunction;
-    const constructorParams = constructorMethod === undefined
-      ? []
-      : getNodeArray(getNode(constructorMethod, "value"), "params");
+    const constructorParams =
+      constructorMethod === undefined
+        ? []
+        : getNodeArray(getNode(constructorMethod, "value"), "params");
     const classInfo: VMClassInfo = {
       constructorMethod,
       environment: context.lexicalEnvironment,
@@ -2970,9 +3694,10 @@ async function evaluateClass(
 
     userFunctionRecords.set(constructor, {
       async: false,
-      body: constructorMethod === undefined
-        ? createEmptyBlockStatement()
-        : getNode(getNode(constructorMethod, "value"), "body"),
+      body:
+        constructorMethod === undefined
+          ? createEmptyBlockStatement()
+          : getNode(getNode(constructorMethod, "value"), "body"),
       classInfo,
       constructable: true,
       environment: context.lexicalEnvironment,
@@ -2992,7 +3717,8 @@ async function evaluateClass(
       prototype,
       privateEnvironment,
     );
-    (classInfo as { instanceElements: readonly VMClassInstanceElement[] }).instanceElements = instanceElements;
+    (classInfo as { instanceElements: readonly VMClassInstanceElement[] }).instanceElements =
+      instanceElements;
 
     initializeClassNameBinding(classEnvironment, className, constructor);
     options.initializeName?.(constructor);
@@ -3136,11 +3862,12 @@ async function defineClassElements(
       const homeObject = isStatic ? constructor : prototype;
       const target = homeObject;
       const key = await classElementKey(element, context, privateEnvironment);
-      const method = createUserFunction(getNode(element, "value"), context, propertyKeyToFunctionName(key.label), {
-        constructable: false,
-        homeObject,
-        privateEnvironment,
-      });
+      const method = createUserFunction(
+        getNode(element, "value"),
+        context,
+        propertyKeyToFunctionName(key.label),
+        { constructable: false, homeObject, privateEnvironment },
+      );
 
       if (key.privateName !== undefined) {
         const entry = privateMethodEntry(element, method);
@@ -3166,9 +3893,10 @@ async function defineClassElements(
         instanceElements.push({
           entry: {
             kind: "field-initializer",
-            value: element.value === null || element.value === undefined
-              ? undefined
-              : asNode(element.value),
+            value:
+              element.value === null || element.value === undefined
+                ? undefined
+                : asNode(element.value),
           },
           kind: "private",
           name: key.privateName,
@@ -3177,9 +3905,10 @@ async function defineClassElements(
         instanceElements.push({
           key: key.label,
           kind: "field",
-          value: element.value === null || element.value === undefined
-            ? undefined
-            : asNode(element.value),
+          value:
+            element.value === null || element.value === undefined
+              ? undefined
+              : asNode(element.value),
         });
       }
       continue;
@@ -3206,23 +3935,24 @@ async function initializeStaticFields(
     }
 
     const key = await classElementKey(element, context, privateEnvironment);
-    const valueNode = element.value === null || element.value === undefined
-      ? undefined
-      : asNode(element.value);
-    const value = valueNode === undefined
-      ? undefined
-      : await evaluateWithFrame(context, {
-        homeObject: constructor,
-        privateEnvironment,
-      }, async () => {
-        const previousThis = context.thisValue;
-        context.thisValue = constructor;
-        try {
-          return await evaluateExpression(valueNode, context);
-        } finally {
-          context.thisValue = previousThis;
-        }
-      });
+    const valueNode =
+      element.value === null || element.value === undefined ? undefined : asNode(element.value);
+    const value =
+      valueNode === undefined
+        ? undefined
+        : await evaluateWithFrame(
+            context,
+            { homeObject: constructor, privateEnvironment },
+            async () => {
+              const previousThis = context.thisValue;
+              context.thisValue = constructor;
+              try {
+                return await evaluateExpression(valueNode, context);
+              } finally {
+                context.thisValue = previousThis;
+              }
+            },
+          );
 
     if (key.privateName !== undefined) {
       definePrivateSlot(constructor, key.privateName, { kind: "field", value });
@@ -3291,21 +4021,22 @@ function defineClassMethod(
 
   if (kind === "get" || kind === "set") {
     const existing = getOwnPropertyDescriptor(target, key);
-    const descriptor = kind === "get"
-      ? {
-          configurable: true,
-          enumerable: false,
-          get: method,
-          kind: "accessor" as const,
-          set: existing?.kind === "accessor" ? existing.set : undefined,
-        }
-      : {
-          configurable: true,
-          enumerable: false,
-          get: existing?.kind === "accessor" ? existing.get : undefined,
-          kind: "accessor" as const,
-          set: method,
-        };
+    const descriptor =
+      kind === "get"
+        ? {
+            configurable: true,
+            enumerable: false,
+            get: method,
+            kind: "accessor" as const,
+            set: existing?.kind === "accessor" ? existing.set : undefined,
+          }
+        : {
+            configurable: true,
+            enumerable: false,
+            get: existing?.kind === "accessor" ? existing.get : undefined,
+            kind: "accessor" as const,
+            set: method,
+          };
 
     if (!defineOwnProperty(target, key, descriptor)) {
       throw runtimeError("Unable to define VM class accessor.", {
@@ -3385,9 +4116,14 @@ async function evaluateUpdateExpression(
   const reference = await evaluateReference(getNode(expression, "argument"), context);
   const oldValue = await toNumeric(await reference.get(), context);
   const operator = getString(expression, "operator");
-  const nextValue = typeof oldValue === "bigint"
-    ? operator === "++" ? oldValue + 1n : oldValue - 1n
-    : operator === "++" ? oldValue + 1 : oldValue - 1;
+  const nextValue =
+    typeof oldValue === "bigint"
+      ? operator === "++"
+        ? oldValue + 1n
+        : oldValue - 1n
+      : operator === "++"
+        ? oldValue + 1
+        : oldValue - 1;
   await reference.set(nextValue);
   return expression.prefix === true ? nextValue : oldValue;
 }
@@ -3404,7 +4140,10 @@ async function evaluateBinaryExpression(
       const leftPrimitive = await toPrimitive(left, context, "default");
       const rightPrimitive = await toPrimitive(right, context, "default");
       if (typeof leftPrimitive === "string" || typeof rightPrimitive === "string") {
-        return toStringFromPrimitive(leftPrimitive, context) + toStringFromPrimitive(rightPrimitive, context);
+        return (
+          toStringFromPrimitive(leftPrimitive, context) +
+          toStringFromPrimitive(rightPrimitive, context)
+        );
       }
       const leftNumeric = toNumericFromPrimitive(leftPrimitive, context);
       const rightNumeric = toNumericFromPrimitive(rightPrimitive, context);
@@ -3416,15 +4155,40 @@ async function evaluateBinaryExpression(
         : leftNumeric + (rightNumeric as number);
     }
     case "-":
-      return applyNumericBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "-", context);
+      return applyNumericBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "-",
+        context,
+      );
     case "*":
-      return applyNumericBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "*", context);
+      return applyNumericBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "*",
+        context,
+      );
     case "/":
-      return applyNumericBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "/", context);
+      return applyNumericBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "/",
+        context,
+      );
     case "%":
-      return applyNumericBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "%", context);
+      return applyNumericBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "%",
+        context,
+      );
     case "**":
-      return applyNumericBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "**", context);
+      return applyNumericBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "**",
+        context,
+      );
     case "<":
       return (await compareLessThan(left, right, context)) ?? false;
     case "<=": {
@@ -3446,23 +4210,56 @@ async function evaluateBinaryExpression(
     case "!==":
       return left !== right;
     case "|":
-      return applyBitwiseBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "|", context);
+      return applyBitwiseBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "|",
+        context,
+      );
     case "&":
-      return applyBitwiseBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "&", context);
+      return applyBitwiseBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "&",
+        context,
+      );
     case "^":
-      return applyBitwiseBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "^", context);
+      return applyBitwiseBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "^",
+        context,
+      );
     case "<<":
-      return applyBitwiseBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "<<", context);
+      return applyBitwiseBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "<<",
+        context,
+      );
     case ">>":
-      return applyBitwiseBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), ">>", context);
+      return applyBitwiseBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        ">>",
+        context,
+      );
     case ">>>":
-      return applyBitwiseBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), ">>>", context);
+      return applyBitwiseBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        ">>>",
+        context,
+      );
     case "in":
       return hasGuestProperty(right, await toPropertyKey(left, context), context);
     case "instanceof":
       return instanceOfGuest(left, right, context);
     default:
-      throw unsupportedNode(expression, `Unsupported binary operator ${getString(expression, "operator")}.`);
+      throw unsupportedNode(
+        expression,
+        `Unsupported binary operator ${getString(expression, "operator")}.`,
+      );
   }
 }
 
@@ -3482,7 +4279,9 @@ async function evaluateLogicalExpression(
   }
 
   if (operator === "??") {
-    return left === null || left === undefined ? evaluateExpression(getNode(expression, "right"), context) : left;
+    return left === null || left === undefined
+      ? evaluateExpression(getNode(expression, "right"), context)
+      : left;
   }
 
   throw unsupportedNode(expression, `Unsupported logical operator ${operator}.`);
@@ -3496,7 +4295,10 @@ async function evaluateUnaryExpression(
 
   if (operator === "typeof") {
     const argument = getNode(expression, "argument");
-    if (argument.type === "Identifier" && !context.lexicalEnvironment.has(getString(argument, "name"))) {
+    if (
+      argument.type === "Identifier" &&
+      !context.lexicalEnvironment.has(getString(argument, "name"))
+    ) {
       return "undefined";
     }
     return guestTypeof(await evaluateExpression(argument, context));
@@ -3534,15 +4336,18 @@ async function evaluateCallExpression(
     return evaluateSuperCallExpression(expression, context);
   }
 
-  const calleeReference = calleeNode.type === "MemberExpression"
-    ? await evaluateReference(calleeNode, context)
-    : undefined;
-  const callee = calleeReference === undefined
-    ? await evaluateExpression(calleeNode, context)
-    : await calleeReference.get();
-  const thisValue = calleeReference?.kind === "member" || calleeReference?.kind === "private-member"
-    ? calleeReference.object
-    : undefined;
+  const calleeReference =
+    calleeNode.type === "MemberExpression"
+      ? await evaluateReference(calleeNode, context)
+      : undefined;
+  const callee =
+    calleeReference === undefined
+      ? await evaluateExpression(calleeNode, context)
+      : await calleeReference.get();
+  const thisValue =
+    calleeReference?.kind === "member" || calleeReference?.kind === "private-member"
+      ? calleeReference.object
+      : undefined;
   const userThisValue = thisValue ?? context.globalObject;
   const args = await evaluateArgumentList(getNodeArray(expression, "arguments"), context);
 
@@ -3605,7 +4410,11 @@ async function invokeCallableValue(
   if (isHostCallable(callee)) {
     const hostArgs = await exportGuestArguments(args, context);
 
-    return importGuestValue(await invokeHostCallable(callee, hostArgs), "<capability-result>", getIntrinsics(context));
+    return importGuestValue(
+      await invokeHostCallable(callee, hostArgs),
+      "<capability-result>",
+      getIntrinsics(context),
+    );
   }
 
   if (isNativeCallable(callee)) {
@@ -3659,10 +4468,7 @@ async function evaluateChainNode(
     return evaluateChainCallExpression(node, context);
   }
 
-  return {
-    shortCircuited: false,
-    value: await evaluateExpression(node, context),
-  };
+  return { shortCircuited: false, value: await evaluateExpression(node, context) };
 }
 
 async function evaluateChainMemberExpression(
@@ -3683,20 +4489,12 @@ async function evaluateChainMemberExpression(
   const property = getNode(expression, "property");
   if (property.type === "PrivateIdentifier") {
     const reference = createPrivateMemberReference(object, getString(property, "name"), context);
-    return {
-      reference,
-      shortCircuited: false,
-      value: await reference.get(),
-    };
+    return { reference, shortCircuited: false, value: await reference.get() };
   }
 
   const key = await propertyKeyFromMember(expression, context);
   const reference = createMemberReferenceFromObject(object, key, context);
-  return {
-    reference,
-    shortCircuited: false,
-    value: await reference.get(),
-  };
+  return { reference, shortCircuited: false, value: await reference.get() };
 }
 
 async function evaluateChainCallExpression(
@@ -3713,10 +4511,10 @@ async function evaluateChainCallExpression(
     return chainShortCircuit();
   }
 
-  const thisValue = calleeResult.reference?.kind === "member" ||
-    calleeResult.reference?.kind === "private-member"
-    ? calleeResult.reference.object
-    : undefined;
+  const thisValue =
+    calleeResult.reference?.kind === "member" || calleeResult.reference?.kind === "private-member"
+      ? calleeResult.reference.object
+      : undefined;
   const userThisValue = thisValue ?? context.globalObject;
   const args = await evaluateArgumentList(getNodeArray(expression, "arguments"), context);
   return {
@@ -3726,10 +4524,7 @@ async function evaluateChainCallExpression(
 }
 
 function chainShortCircuit(): ChainEvaluation {
-  return {
-    shortCircuited: true,
-    value: undefined,
-  };
+  return { shortCircuited: true, value: undefined };
 }
 
 async function evaluateNewExpression(
@@ -3790,7 +4585,10 @@ async function evaluateTemplateLiteral(
     const value = asRecord(quasis[index].value, "template value");
     const cooked = value.cooked;
     if (typeof cooked !== "string") {
-      throw unsupportedNode(expression, "Template literals with invalid escapes are not supported.");
+      throw unsupportedNode(
+        expression,
+        "Template literals with invalid escapes are not supported.",
+      );
     }
     output += cooked;
 
@@ -3811,10 +4609,10 @@ async function evaluateArgumentList(
   for (const argument of argumentsList) {
     if (argument.type === "SpreadElement") {
       args.push(
-        ...await getSpreadValues(
+        ...(await getSpreadValues(
           await evaluateExpression(getNode(argument, "argument"), context),
           context,
-        ),
+        )),
       );
       continue;
     }
@@ -3833,7 +4631,10 @@ async function evaluateReference(node: ASTNode, context: VMExecutionContext): Pr
     return createMemberReference(node, context);
   }
 
-  throw unsupportedNode(node, "Only identifiers and member expressions can be assigned or deleted.");
+  throw unsupportedNode(
+    node,
+    "Only identifiers and member expressions can be assigned or deleted.",
+  );
 }
 
 function createBindingReference(name: string, context: VMExecutionContext): BindingReference {
@@ -3883,7 +4684,11 @@ async function createMemberReference(
   const object = await evaluateExpression(objectNode, context);
   const property = getNode(node, "property");
   if (property.type === "PrivateIdentifier") {
-    return createPrivateMemberReference(asGuestObject(object), getString(property, "name"), context);
+    return createPrivateMemberReference(
+      asGuestObject(object),
+      getString(property, "name"),
+      context,
+    );
   }
   const key = await propertyKeyFromMember(node, context);
 
@@ -4049,13 +4854,12 @@ async function setGuestProperty(
   }
 
   if (isProxyObject(receiver)) {
-    return definePropertyGuest(receiver, key, {
-      configurable: true,
-      enumerable: true,
-      kind: "data",
-      value,
-      writable: true,
-    }, context);
+    return definePropertyGuest(
+      receiver,
+      key,
+      { configurable: true, enumerable: true, kind: "data", value, writable: true },
+      context,
+    );
   }
 
   const receiverDescriptor = await getOwnPropertyDescriptorGuest(receiver, key, context);
@@ -4066,13 +4870,12 @@ async function setGuestProperty(
     return definePropertyGuest(receiver, key, { kind: "data", value }, context);
   }
 
-  return definePropertyGuest(receiver, key, {
-    configurable: true,
-    enumerable: true,
-    kind: "data",
-    value,
-    writable: true,
-  }, context);
+  return definePropertyGuest(
+    receiver,
+    key,
+    { configurable: true, enumerable: true, kind: "data", value, writable: true },
+    context,
+  );
 }
 
 async function getPropertyDescriptor(
@@ -4166,7 +4969,11 @@ async function instanceOfGuest(
   return false;
 }
 
-async function deleteGuestProperty(object: VMObject, key: VMPropertyKey, context: VMExecutionContext): Promise<boolean> {
+async function deleteGuestProperty(
+  object: VMObject,
+  key: VMPropertyKey,
+  context: VMExecutionContext,
+): Promise<boolean> {
   if (isProxyObject(object)) {
     return proxyDeleteProperty(object, key, context);
   }
@@ -4238,9 +5045,8 @@ async function applyPattern(
       await write(pattern, value);
       return;
     case "AssignmentPattern": {
-      const nextValue = value === undefined
-        ? await evaluateExpression(getNode(pattern, "right"), context)
-        : value;
+      const nextValue =
+        value === undefined ? await evaluateExpression(getNode(pattern, "right"), context) : value;
       await applyPattern(getNode(pattern, "left"), nextValue, context, write);
       return;
     }
@@ -4276,7 +5082,12 @@ async function applyArrayPattern(
 
     const elementNode = asNode(element);
     if (elementNode.type === "RestElement") {
-      await applyPattern(getNode(elementNode, "argument"), createGuestArray(values.slice(index), context), context, write);
+      await applyPattern(
+        getNode(elementNode, "argument"),
+        createGuestArray(values.slice(index), context),
+        context,
+        write,
+      );
       return;
     }
 
@@ -4331,7 +5142,12 @@ function definePatternBinding(
 
   if (target.kind === "var") {
     if (!target.environment.hasOwn(name)) {
-      target.environment.define(name, { kind: "var", mutable: true, deletable: true, initialized: true });
+      target.environment.define(name, {
+        kind: "var",
+        mutable: true,
+        deletable: true,
+        initialized: true,
+      });
       if (target.environment === context.globalEnvironment) {
         defineGlobalObjectProperty(context.globalObject, name, undefined);
       }
@@ -4395,7 +5211,11 @@ async function getSpreadValues(
   });
 }
 
-async function hasGuestProperty(value: VMInternalValue, key: VMPropertyKey, context: VMExecutionContext): Promise<boolean> {
+async function hasGuestProperty(
+  value: VMInternalValue,
+  key: VMPropertyKey,
+  context: VMExecutionContext,
+): Promise<boolean> {
   const object = asGuestObject(value);
   if (isProxyObject(object)) {
     return proxyHas(object, key, context);
@@ -4436,7 +5256,10 @@ async function definePropertyGuest(
   return defineOwnProperty(object, key, descriptor);
 }
 
-async function ownKeysGuest(object: VMObject, context: VMExecutionContext): Promise<readonly VMPropertyKey[]> {
+async function ownKeysGuest(
+  object: VMObject,
+  context: VMExecutionContext,
+): Promise<readonly VMPropertyKey[]> {
   if (isProxyObject(object)) {
     return proxyOwnKeys(object, context);
   }
@@ -4474,7 +5297,10 @@ async function isExtensibleGuest(object: VMObject, context: VMExecutionContext):
   return isObjectExtensible(object);
 }
 
-async function preventExtensionsGuest(object: VMObject, context: VMExecutionContext): Promise<boolean> {
+async function preventExtensionsGuest(
+  object: VMObject,
+  context: VMExecutionContext,
+): Promise<boolean> {
   if (isProxyObject(object)) {
     return proxyPreventExtensions(object, context);
   }
@@ -4522,7 +5348,7 @@ async function arrayLikeArgumentList(
   context: VMExecutionContext,
 ): Promise<readonly VMInternalValue[]> {
   const object = toObject(value, context);
-  const length = toArrayLength(await getGuestProperty(object, "length", context) ?? 0);
+  const length = toArrayLength((await getGuestProperty(object, "length", context)) ?? 0);
   const args: VMInternalValue[] = [];
   for (let index = 0; index < length; index += 1) {
     args.push(await getGuestProperty(object, String(index), context));
@@ -4531,13 +5357,17 @@ async function arrayLikeArgumentList(
 }
 
 function completePropertyDescriptor(descriptor: VMPropertyDescriptorInput): VMPropertyDescriptor {
-  if (hasOwn.call(descriptor, "get") || hasOwn.call(descriptor, "set") || descriptor.kind === "accessor") {
+  if (
+    hasOwn.call(descriptor, "get") ||
+    hasOwn.call(descriptor, "set") ||
+    descriptor.kind === "accessor"
+  ) {
     return Object.freeze({
       configurable: Boolean(descriptor.configurable),
       enumerable: Boolean(descriptor.enumerable),
-      get: "get" in descriptor ? descriptor.get ?? null : null,
+      get: "get" in descriptor ? (descriptor.get ?? null) : null,
       kind: "accessor" as const,
-      set: "set" in descriptor ? descriptor.set ?? null : null,
+      set: "set" in descriptor ? (descriptor.set ?? null) : null,
     });
   }
 
@@ -4590,7 +5420,11 @@ function validateProxyDescriptorReport(
 ): void {
   if (targetDescriptor === undefined) {
     if (!targetExtensible) {
-      throw proxyInvariantError(trapName, "cannot report a new property for a non-extensible target", key);
+      throw proxyInvariantError(
+        trapName,
+        "cannot report a new property for a non-extensible target",
+        key,
+      );
     }
     if (!descriptor.configurable) {
       throw proxyInvariantError(trapName, "cannot report a new non-configurable property", key);
@@ -4599,11 +5433,22 @@ function validateProxyDescriptorReport(
   }
 
   if (!descriptor.configurable && targetDescriptor.configurable) {
-    throw proxyInvariantError(trapName, "cannot report a configurable target property as non-configurable", key);
+    throw proxyInvariantError(
+      trapName,
+      "cannot report a configurable target property as non-configurable",
+      key,
+    );
   }
 
-  if (!targetDescriptor.configurable && !isDescriptorCompatibleWithFrozenTarget(descriptor, targetDescriptor)) {
-    throw proxyInvariantError(trapName, "reported descriptor is incompatible with a non-configurable target property", key);
+  if (
+    !targetDescriptor.configurable &&
+    !isDescriptorCompatibleWithFrozenTarget(descriptor, targetDescriptor)
+  ) {
+    throw proxyInvariantError(
+      trapName,
+      "reported descriptor is incompatible with a non-configurable target property",
+      key,
+    );
   }
 }
 
@@ -4618,13 +5463,17 @@ function isDescriptorCompatibleWithFrozenTarget(
     return false;
   }
   if (targetDescriptor.kind === "data") {
-    return descriptor.kind === "data" &&
+    return (
+      descriptor.kind === "data" &&
       (targetDescriptor.writable || !descriptor.writable) &&
-      (targetDescriptor.writable || sameValueZero(descriptor.value, targetDescriptor.value));
+      (targetDescriptor.writable || sameValueZero(descriptor.value, targetDescriptor.value))
+    );
   }
-  return descriptor.kind === "accessor" &&
+  return (
+    descriptor.kind === "accessor" &&
     descriptor.get === targetDescriptor.get &&
-    descriptor.set === targetDescriptor.set;
+    descriptor.set === targetDescriptor.set
+  );
 }
 
 function proxyInvariantError(trapName: string, message: string, key?: VMPropertyKey): VMError {
@@ -4666,7 +5515,10 @@ function setGlobalObjectProperty(
   }
 }
 
-async function getEnumerableOwnStringKeys(object: VMObject, context: VMExecutionContext): Promise<string[]> {
+async function getEnumerableOwnStringKeys(
+  object: VMObject,
+  context: VMExecutionContext,
+): Promise<string[]> {
   const keys: string[] = [];
 
   for (const key of await ownKeysGuest(object, context)) {
@@ -4697,10 +5549,7 @@ async function getArrayIndexValues(
   return values;
 }
 
-async function getArrayLengthValue(
-  object: VMObject,
-  context: VMExecutionContext,
-): Promise<number> {
+async function getArrayLengthValue(object: VMObject, context: VMExecutionContext): Promise<number> {
   const length = await getGuestProperty(object, "length", context);
 
   if (
@@ -4715,7 +5564,10 @@ async function getArrayLengthValue(
   return length;
 }
 
-async function propertyKeyFromMember(node: ASTNode, context: VMExecutionContext): Promise<VMPropertyKey> {
+async function propertyKeyFromMember(
+  node: ASTNode,
+  context: VMExecutionContext,
+): Promise<VMPropertyKey> {
   if (node.computed === true) {
     return toPropertyKey(await evaluateExpression(getNode(node, "property"), context), context);
   }
@@ -4727,7 +5579,10 @@ async function propertyKeyFromMember(node: ASTNode, context: VMExecutionContext)
   return getString(property, "name");
 }
 
-async function propertyKeyFromProperty(node: ASTNode, context: VMExecutionContext): Promise<VMPropertyKey> {
+async function propertyKeyFromProperty(
+  node: ASTNode,
+  context: VMExecutionContext,
+): Promise<VMPropertyKey> {
   if (node.computed === true) {
     return toPropertyKey(await evaluateExpression(getNode(node, "key"), context), context);
   }
@@ -4798,22 +5653,26 @@ function createUserFunction(
   const isArrow = node.type === "ArrowFunctionExpression";
   const constructable = options.constructable ?? (!isArrow && node.async !== true);
 
-  defineUserFunctionProperty(callable, "name", name ?? "", {
-    configurable: true,
-    writable: false,
-  });
+  defineUserFunctionProperty(callable, "name", name ?? "", { configurable: true, writable: false });
   defineUserFunctionProperty(callable, "length", getFunctionLength(params), {
     configurable: true,
     writable: false,
   });
-  defineUserFunctionProperty(callable, "valueOf", createNativeFunctionObject("Function.prototype.valueOf", (_args, _context, thisValue) => thisValue), {
-    configurable: true,
-    writable: true,
-  });
-  defineUserFunctionProperty(callable, "toString", createNativeFunctionObject("Function.prototype.toString", () => "[object Function]"), {
-    configurable: true,
-    writable: true,
-  });
+  defineUserFunctionProperty(
+    callable,
+    "valueOf",
+    createNativeFunctionObject(
+      "Function.prototype.valueOf",
+      (_args, _context, thisValue) => thisValue,
+    ),
+    { configurable: true, writable: true },
+  );
+  defineUserFunctionProperty(
+    callable,
+    "toString",
+    createNativeFunctionObject("Function.prototype.toString", () => "[object Function]"),
+    { configurable: true, writable: true },
+  );
 
   if (constructable) {
     const prototype = createOrdinaryObject(getIntrinsics(context).objectPrototype);
@@ -4900,19 +5759,16 @@ async function bindFunctionParameters(
   for (let index = 0; index < params.length; index += 1) {
     const param = params[index];
     if (param.type === "RestElement") {
-      await bindPattern(getNode(param, "argument"), createGuestArray(args.slice(index), context), context, {
-        environment,
-        kind: "let",
-        mutable: true,
-      });
+      await bindPattern(
+        getNode(param, "argument"),
+        createGuestArray(args.slice(index), context),
+        context,
+        { environment, kind: "let", mutable: true },
+      );
       return;
     }
 
-    await bindPattern(param, args[index], context, {
-      environment,
-      kind: "let",
-      mutable: true,
-    });
+    await bindPattern(param, args[index], context, { environment, kind: "let", mutable: true });
   }
 }
 
@@ -4946,35 +5802,39 @@ async function invokeUserFunction(
   callerContext.variableEnvironment = functionEnvironment;
   callerContext.thisValue = record.arrow ? record.lexicalThis : thisValue;
 
-  return evaluateWithFrame(callerContext, {
-    construction: options.construction,
-    homeObject: record.homeObject,
-    privateEnvironment: record.privateEnvironment,
-    record,
-  }, async () => {
-    await bindFunctionParameters(record.params, args, callerContext, functionEnvironment);
+  return evaluateWithFrame(
+    callerContext,
+    {
+      construction: options.construction,
+      homeObject: record.homeObject,
+      privateEnvironment: record.privateEnvironment,
+      record,
+    },
+    async () => {
+      await bindFunctionParameters(record.params, args, callerContext, functionEnvironment);
 
-    if (record.expressionBody) {
-      return await evaluateExpression(record.body, callerContext);
-    }
+      if (record.expressionBody) {
+        return await evaluateExpression(record.body, callerContext);
+      }
 
-    const completion = await executeStatement(record.body, callerContext);
-    if (completion.type === "return") {
-      return completion.value;
-    }
+      const completion = await executeStatement(record.body, callerContext);
+      if (completion.type === "return") {
+        return completion.value;
+      }
 
-    if (completion.type === "normal") {
-      return undefined;
-    }
+      if (completion.type === "normal") {
+        return undefined;
+      }
 
-    if (completion.type === "throw") {
-      throw new VMGuestException(completion.value);
-    }
+      if (completion.type === "throw") {
+        throw new VMGuestException(completion.value);
+      }
 
-    throw runtimeError(`Unexpected ${completion.type} inside guest function.`, {
-      reason: `unexpected ${completion.type} completion`,
-    });
-  }).finally(() => {
+      throw runtimeError(`Unexpected ${completion.type} inside guest function.`, {
+        reason: `unexpected ${completion.type} completion`,
+      });
+    },
+  ).finally(() => {
     callerContext.lexicalEnvironment = previousLexical;
     callerContext.variableEnvironment = previousVariable;
     callerContext.thisValue = previousThis;
@@ -4989,7 +5849,9 @@ async function evaluateAddition(
   const leftPrimitive = await toPrimitive(left, context, "default");
   const rightPrimitive = await toPrimitive(right, context, "default");
   if (typeof leftPrimitive === "string" || typeof rightPrimitive === "string") {
-    return toStringFromPrimitive(leftPrimitive, context) + toStringFromPrimitive(rightPrimitive, context);
+    return (
+      toStringFromPrimitive(leftPrimitive, context) + toStringFromPrimitive(rightPrimitive, context)
+    );
   }
   const leftNumeric = toNumericFromPrimitive(leftPrimitive, context);
   const rightNumeric = toNumericFromPrimitive(rightPrimitive, context);
@@ -5220,55 +6082,55 @@ async function initializeClassInstanceElements(
   instance: VMObject,
   context: VMExecutionContext,
 ): Promise<void> {
-  await evaluateWithFrame(context, {
-    homeObject: classInfo.prototype,
-    privateEnvironment: classInfo.privateEnvironment,
-  }, async () => {
-    const previousThis = context.thisValue;
-    const previousLexical = context.lexicalEnvironment;
-    const previousVariable = context.variableEnvironment;
-    context.thisValue = instance;
-    context.lexicalEnvironment = classInfo.environment;
-    context.variableEnvironment = classInfo.environment;
-    try {
-      for (const element of classInfo.instanceElements) {
-        if (element.kind === "private" && element.entry.kind !== "field-initializer") {
-          definePrivateSlot(instance, element.name, element.entry);
-        }
-      }
-
-      for (const element of classInfo.instanceElements) {
-        if (element.kind === "field") {
-          const value = element.value === undefined
-            ? undefined
-            : await evaluateExpression(element.value, context);
-          defineDataProperty(instance, element.key, value);
-          continue;
+  await evaluateWithFrame(
+    context,
+    { homeObject: classInfo.prototype, privateEnvironment: classInfo.privateEnvironment },
+    async () => {
+      const previousThis = context.thisValue;
+      const previousLexical = context.lexicalEnvironment;
+      const previousVariable = context.variableEnvironment;
+      context.thisValue = instance;
+      context.lexicalEnvironment = classInfo.environment;
+      context.variableEnvironment = classInfo.environment;
+      try {
+        for (const element of classInfo.instanceElements) {
+          if (element.kind === "private" && element.entry.kind !== "field-initializer") {
+            definePrivateSlot(instance, element.name, element.entry);
+          }
         }
 
-        if (element.entry.kind === "field-initializer") {
-          const value = element.entry.value === undefined
-            ? undefined
-            : await evaluateExpression(element.entry.value, context);
-          definePrivateSlot(instance, element.name, { kind: "field", value });
+        for (const element of classInfo.instanceElements) {
+          if (element.kind === "field") {
+            const value =
+              element.value === undefined
+                ? undefined
+                : await evaluateExpression(element.value, context);
+            defineDataProperty(instance, element.key, value);
+            continue;
+          }
+
+          if (element.entry.kind === "field-initializer") {
+            const value =
+              element.entry.value === undefined
+                ? undefined
+                : await evaluateExpression(element.entry.value, context);
+            definePrivateSlot(instance, element.name, { kind: "field", value });
+          }
         }
+      } finally {
+        context.thisValue = previousThis;
+        context.lexicalEnvironment = previousLexical;
+        context.variableEnvironment = previousVariable;
       }
-    } finally {
-      context.thisValue = previousThis;
-      context.lexicalEnvironment = previousLexical;
-      context.variableEnvironment = previousVariable;
-    }
-  });
+    },
+  );
 }
 
 function defineUserFunctionProperty(
   object: VMObject,
   key: string,
   value: VMInternalValue,
-  options: {
-    readonly configurable: boolean;
-    readonly writable: boolean;
-  },
+  options: { readonly configurable: boolean; readonly writable: boolean },
 ): void {
   const defined = defineOwnProperty(object, key, {
     configurable: options.configurable,
@@ -5296,27 +6158,82 @@ async function applyAssignmentOperator(
     case "+=":
       return evaluateAddition(left, right, context);
     case "-=":
-      return applyNumericBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "-", context);
+      return applyNumericBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "-",
+        context,
+      );
     case "*=":
-      return applyNumericBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "*", context);
+      return applyNumericBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "*",
+        context,
+      );
     case "/=":
-      return applyNumericBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "/", context);
+      return applyNumericBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "/",
+        context,
+      );
     case "%=":
-      return applyNumericBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "%", context);
+      return applyNumericBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "%",
+        context,
+      );
     case "**=":
-      return applyNumericBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "**", context);
+      return applyNumericBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "**",
+        context,
+      );
     case "|=":
-      return applyBitwiseBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "|", context);
+      return applyBitwiseBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "|",
+        context,
+      );
     case "&=":
-      return applyBitwiseBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "&", context);
+      return applyBitwiseBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "&",
+        context,
+      );
     case "^=":
-      return applyBitwiseBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "^", context);
+      return applyBitwiseBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "^",
+        context,
+      );
     case "<<=":
-      return applyBitwiseBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), "<<", context);
+      return applyBitwiseBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        "<<",
+        context,
+      );
     case ">>=":
-      return applyBitwiseBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), ">>", context);
+      return applyBitwiseBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        ">>",
+        context,
+      );
     case ">>>=":
-      return applyBitwiseBinaryOperator(await toNumeric(left, context), await toNumeric(right, context), ">>>", context);
+      return applyBitwiseBinaryOperator(
+        await toNumeric(left, context),
+        await toNumeric(right, context),
+        ">>>",
+        context,
+      );
     case "&&=":
       return isTruthy(left) ? right : left;
     case "||=":
@@ -5330,11 +6247,7 @@ async function applyAssignmentOperator(
   }
 }
 
-function importGuestValue(
-  value: unknown,
-  path: string,
-  intrinsics: VMIntrinsics,
-): VMInternalValue {
+function importGuestValue(value: unknown, path: string, intrinsics: VMIntrinsics): VMInternalValue {
   if (isVMObject(value)) {
     return value;
   }
@@ -5382,7 +6295,11 @@ function importGuestValue(
         String(index),
         descriptor === undefined
           ? undefined
-          : importGuestValue(readDataDescriptor(descriptor, `${path}[${index}]`), `${path}[${index}]`, intrinsics),
+          : importGuestValue(
+              readDataDescriptor(descriptor, `${path}[${index}]`),
+              `${path}[${index}]`,
+              intrinsics,
+            ),
       );
     }
     return output;
@@ -5456,7 +6373,11 @@ function importSerializedBoundaryValue(
       const output = createOrdinaryObject(intrinsics.objectPrototype);
 
       for (const [key, child] of value.entries) {
-        defineDataProperty(output, key, importSerializedBoundaryValue(child, `${path}.${key}`, intrinsics));
+        defineDataProperty(
+          output,
+          key,
+          importSerializedBoundaryValue(child, `${path}.${key}`, intrinsics),
+        );
       }
 
       return output;
@@ -5467,15 +6388,20 @@ function importSerializedBoundaryValue(
       return createRegExpObject(value.source, value.flags, value.lastIndex, intrinsics);
     case "map":
       return createMapObject(
-        value.entries.map(([key, entryValue], index) => [
-          importSerializedBoundaryValue(key, `${path}<map[${index}].key>`, intrinsics),
-          importSerializedBoundaryValue(entryValue, `${path}<map[${index}].value>`, intrinsics),
-        ] as const),
+        value.entries.map(
+          ([key, entryValue], index) =>
+            [
+              importSerializedBoundaryValue(key, `${path}<map[${index}].key>`, intrinsics),
+              importSerializedBoundaryValue(entryValue, `${path}<map[${index}].value>`, intrinsics),
+            ] as const,
+        ),
         intrinsics,
       );
     case "set":
       return createSetObject(
-        value.values.map((child, index) => importSerializedBoundaryValue(child, `${path}<set[${index}]>`, intrinsics)),
+        value.values.map((child, index) =>
+          importSerializedBoundaryValue(child, `${path}<set[${index}]>`, intrinsics),
+        ),
         intrinsics,
       );
     case "arrayBuffer":
@@ -5526,10 +6452,7 @@ function containsHostCallable(value: unknown, seen: WeakSet<object>): boolean {
 
   if (isPlainObject(value)) {
     for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
-      if (
-        "value" in descriptor &&
-        containsHostCallable(descriptor.value, seen)
-      ) {
+      if ("value" in descriptor && containsHostCallable(descriptor.value, seen)) {
         return true;
       }
     }
@@ -5598,7 +6521,8 @@ async function prepareGuestValueForBoundary(
       const slot = assertRegExpSlot(value);
       const lastIndex = getOwnPropertyDescriptor(value, "lastIndex");
       const regexp = new RegExp(slot.regexp.source, slot.regexp.flags);
-      regexp.lastIndex = lastIndex?.kind === "data" ? Number(lastIndex.value) : slot.regexp.lastIndex;
+      regexp.lastIndex =
+        lastIndex?.kind === "data" ? Number(lastIndex.value) : slot.regexp.lastIndex;
       return regexp;
     }
     if (dateSlots.has(value)) {
@@ -5618,7 +6542,9 @@ async function prepareGuestValueForBoundary(
       const output = new Set<unknown>();
       let index = 0;
       for (const entry of assertSetSlot(value).values) {
-        output.add(await prepareGuestValueForBoundary(entry, `${path}<set[${index}]>`, active, context));
+        output.add(
+          await prepareGuestValueForBoundary(entry, `${path}<set[${index}]>`, active, context),
+        );
         index += 1;
       }
       return output;
@@ -5641,11 +6567,10 @@ async function prepareGuestValueForBoundary(
   }
 
   if (active.has(value)) {
-    throw new VMError(
-      VMErrorCode.BoundaryCycle,
-      "Cannot serialize cyclic VM values.",
-      { path, valueType: "object" },
-    );
+    throw new VMError(VMErrorCode.BoundaryCycle, "Cannot serialize cyclic VM values.", {
+      path,
+      valueType: "object",
+    });
   }
   active.add(value);
 
@@ -5684,11 +6609,10 @@ async function prepareVMObjectForBoundary(
   context: VMExecutionContext,
 ): Promise<unknown> {
   if (active.has(object)) {
-    throw new VMError(
-      VMErrorCode.BoundaryCycle,
-      "Cannot serialize cyclic VM values.",
-      { path, valueType: "object" },
-    );
+    throw new VMError(VMErrorCode.BoundaryCycle, "Cannot serialize cyclic VM values.", {
+      path,
+      valueType: "object",
+    });
   }
   active.add(object);
 
@@ -5810,7 +6734,9 @@ function guestTypeof(value: VMInternalValue): string {
 }
 
 function isUserFunction(value: unknown): value is VMUserFunction {
-  return typeof value === "object" && value !== null && userFunctionRecords.has(value as VMUserFunction);
+  return (
+    typeof value === "object" && value !== null && userFunctionRecords.has(value as VMUserFunction)
+  );
 }
 
 function isNativeFunctionObject(value: unknown): value is VMObject {
@@ -5821,7 +6747,12 @@ function isCallableValue(value: unknown): boolean {
   if (isProxyObject(value)) {
     return isCallableValue(getProxySlot(value).target);
   }
-  return isHostCallable(value) || isNativeCallable(value) || isUserFunction(value) || isNativeFunctionObject(value);
+  return (
+    isHostCallable(value) ||
+    isNativeCallable(value) ||
+    isUserFunction(value) ||
+    isNativeFunctionObject(value)
+  );
 }
 
 function isConstructableValue(value: unknown): boolean {
@@ -5851,7 +6782,7 @@ function createNativeTools(context: VMExecutionContext): VMNativeCallableTools {
   return {
     async invokeGuestCallable(callable, args) {
       const importedArgs = args.map((arg, index) =>
-        importGuestValue(arg, `<native-callback>[${index}]`, getIntrinsics(context))
+        importGuestValue(arg, `<native-callback>[${index}]`, getIntrinsics(context)),
       );
 
       if (isUserFunction(callable)) {
@@ -5859,7 +6790,13 @@ function createNativeTools(context: VMExecutionContext): VMNativeCallableTools {
       }
 
       if (isNativeCallable(callable)) {
-        return invokeNativeCallable(callable, importedArgs, context, undefined, createNativeTools(context));
+        return invokeNativeCallable(
+          callable,
+          importedArgs,
+          context,
+          undefined,
+          createNativeTools(context),
+        );
       }
 
       if (isNativeFunctionObject(callable)) {
@@ -5869,7 +6806,11 @@ function createNativeTools(context: VMExecutionContext): VMNativeCallableTools {
 
       if (isHostCallable(callable)) {
         const hostArgs = await exportGuestArguments(importedArgs, context);
-        return importGuestValue(await invokeHostCallable(callable, hostArgs), "<callback-result>", getIntrinsics(context));
+        return importGuestValue(
+          await invokeHostCallable(callable, hostArgs),
+          "<callback-result>",
+          getIntrinsics(context),
+        );
       }
 
       throwGuestError(context, "TypeError", "Value is not callable in the VM.");
@@ -5932,11 +6873,7 @@ function resolvePrivateName(name: string, context: VMExecutionContext): VMPrivat
   return privateName;
 }
 
-function definePrivateSlot(
-  object: VMObject,
-  name: VMPrivateName,
-  entry: VMPrivateEntry,
-): void {
+function definePrivateSlot(object: VMObject, name: VMPrivateName, entry: VMPrivateEntry): void {
   let slots = privateSlots.get(object);
   if (slots === undefined) {
     slots = new Map();
@@ -5982,7 +6919,10 @@ function isNullish(value: VMInternalValue): boolean {
   return value === null || value === undefined;
 }
 
-async function toPropertyKey(value: VMInternalValue, context: VMExecutionContext): Promise<VMPropertyKey> {
+async function toPropertyKey(
+  value: VMInternalValue,
+  context: VMExecutionContext,
+): Promise<VMPropertyKey> {
   const key = await toPrimitive(value, context, "string");
   if (isVMSymbol(key)) {
     return key;
@@ -6024,14 +6964,22 @@ async function toPrimitive(
     return value;
   }
 
-  const method = await getGuestProperty(value, getIntrinsics(context).wellKnownSymbols.toPrimitive, context);
+  const method = await getGuestProperty(
+    value,
+    getIntrinsics(context).wellKnownSymbols.toPrimitive,
+    context,
+  );
   if (method !== undefined && method !== null) {
     if (!isCallableValue(method)) {
       throwGuestError(context, "TypeError", "Symbol.toPrimitive method must be callable.");
     }
     const result = await invokeCallableValue(method, [hint], context, value, value);
     if (isObjectValue(result)) {
-      throwGuestError(context, "TypeError", "Symbol.toPrimitive method must return a primitive value.");
+      throwGuestError(
+        context,
+        "TypeError",
+        "Symbol.toPrimitive method must return a primitive value.",
+      );
     }
     return result;
   }
@@ -6049,7 +6997,10 @@ async function toNumber(value: VMInternalValue, context: VMExecutionContext): Pr
   return toNumberFromPrimitive(primitive, context);
 }
 
-async function toNumeric(value: VMInternalValue, context: VMExecutionContext): Promise<number | bigint> {
+async function toNumeric(
+  value: VMInternalValue,
+  context: VMExecutionContext,
+): Promise<number | bigint> {
   const primitive = await toPrimitive(value, context, "number");
   return toNumericFromPrimitive(primitive, context);
 }
@@ -6064,10 +7015,7 @@ function toNumericFromPrimitive(
   return toNumberFromPrimitive(primitive, context);
 }
 
-function toNumberFromPrimitive(
-  primitive: VMInternalValue,
-  context: VMExecutionContext,
-): number {
+function toNumberFromPrimitive(primitive: VMInternalValue, context: VMExecutionContext): number {
   if (isVMSymbol(primitive)) {
     throwGuestError(context, "TypeError", "Cannot convert a Symbol value to a number.");
   }
@@ -6082,9 +7030,10 @@ async function ordinaryToPrimitive(
   context: VMExecutionContext,
   hint: "default" | "number" | "string",
 ): Promise<VMInternalValue> {
-  const methodNames = hint === "string" || (hint === "default" && dateSlots.has(object))
-    ? ["toString", "valueOf"]
-    : ["valueOf", "toString"];
+  const methodNames =
+    hint === "string" || (hint === "default" && dateSlots.has(object))
+      ? ["toString", "valueOf"]
+      : ["valueOf", "toString"];
 
   for (const methodName of methodNames) {
     const method = await getGuestProperty(object, methodName, context);
@@ -6105,7 +7054,10 @@ function isObjectValue(value: VMInternalValue): boolean {
   return isVMObject(value) || isHostCallable(value) || isNativeCallable(value);
 }
 
-async function toStringExplicit(value: VMInternalValue, context: VMExecutionContext): Promise<string> {
+async function toStringExplicit(
+  value: VMInternalValue,
+  context: VMExecutionContext,
+): Promise<string> {
   if (value === undefined) {
     return "";
   }
@@ -6119,7 +7071,10 @@ async function toStringExplicit(value: VMInternalValue, context: VMExecutionCont
   return toStringFromPrimitive(primitive, context, true);
 }
 
-async function toStringForCoercion(value: VMInternalValue, context: VMExecutionContext): Promise<string> {
+async function toStringForCoercion(
+  value: VMInternalValue,
+  context: VMExecutionContext,
+): Promise<string> {
   const primitive = await toPrimitive(value, context, "string");
   return toStringFromPrimitive(primitive, context);
 }
@@ -6177,14 +7132,10 @@ function normalizeEvaluatorError(error: unknown): VMError {
   }
 
   if (error instanceof Error) {
-    return new VMError(VMErrorCode.VMRuntimeError, error.message, {
-      valueType: error.name,
-    });
+    return new VMError(VMErrorCode.VMRuntimeError, error.message, { valueType: error.name });
   }
 
-  return new VMError(VMErrorCode.VMRuntimeError, String(error), {
-    valueType: typeof error,
-  });
+  return new VMError(VMErrorCode.VMRuntimeError, String(error), { valueType: typeof error });
 }
 
 function runtimeError(message: string, details: Record<string, string | undefined> = {}): VMError {
@@ -6199,11 +7150,7 @@ function securityError(message: string, details: Record<string, string | undefin
   return new VMError(VMErrorCode.VMSecurityError, message, details);
 }
 
-function throwGuestError(
-  context: VMExecutionContext,
-  name: VMErrorName,
-  message: string,
-): never {
+function throwGuestError(context: VMExecutionContext, name: VMErrorName, message: string): never {
   throw new VMGuestException(createErrorObject(name, message, getIntrinsics(context)));
 }
 

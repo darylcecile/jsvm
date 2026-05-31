@@ -94,12 +94,7 @@ function createHostNetworkRequest(args: readonly unknown[]): HostNetworkRequest 
     init === undefined ? undefined : getRecordProperty(init, "body"),
   );
 
-  return Object.freeze({
-    url: url.href,
-    method,
-    headers,
-    body,
-  });
+  return Object.freeze({ url: url.href, method, headers, body });
 }
 
 function applyNetworkRules(
@@ -109,26 +104,24 @@ function applyNetworkRules(
   const url = new URL(request.url);
 
   for (const rule of rules) {
-    if (!hostMatches(rule.host, url) || !methodMatches(rule, request.method) || !pathMatches(rule, url.pathname)) {
+    if (
+      !hostMatches(rule.host, url) ||
+      !methodMatches(rule, request.method) ||
+      !pathMatches(rule, url.pathname)
+    ) {
       continue;
     }
 
     return Object.freeze({
       ...request,
-      headers: Object.freeze({
-        ...request.headers,
-        ...rule.headers,
-      }),
+      headers: Object.freeze({ ...request.headers, ...rule.headers }),
     });
   }
 
   throw new VMError(
     VMErrorCode.VMSecurityError,
     `VM network request to ${url.host}${url.pathname} is not allowed by networkRules.`,
-    {
-      reason: "network rule denied",
-      path: `${request.method} ${url.href}`,
-    },
+    { reason: "network rule denied", path: `${request.method} ${url.href}` },
   );
 }
 
@@ -144,7 +137,9 @@ function createFetchResponse(response: HostNetworkResponse): VMRecord {
     headers,
     text: createNativeCallable("Response.text", () => response.bodyText),
     json: createNativeCallable("Response.json", () => parseResponseJson(response.bodyText)),
-    arrayBuffer: createNativeCallable("Response.arrayBuffer", () => textToArrayBuffer(response.bodyText)),
+    arrayBuffer: createNativeCallable("Response.arrayBuffer", () =>
+      textToArrayBuffer(response.bodyText),
+    ),
   });
 }
 
@@ -152,8 +147,13 @@ function createHeadersObject(headers: Readonly<Record<string, string>>): VMRecor
   const normalized = normalizeHeaderRecord(headers);
 
   return Object.assign(Object.create(null), {
-    get: createNativeCallable("Headers.get", ([name]) => normalized[String(name).toLowerCase()] ?? null),
-    has: createNativeCallable("Headers.has", ([name]) => Object.hasOwn(normalized, String(name).toLowerCase())),
+    get: createNativeCallable(
+      "Headers.get",
+      ([name]) => normalized[String(name).toLowerCase()] ?? null,
+    ),
+    has: createNativeCallable("Headers.has", ([name]) =>
+      Object.hasOwn(normalized, String(name).toLowerCase()),
+    ),
     entries: createNativeCallable("Headers.entries", () => Object.entries(normalized)),
     toJSON: createNativeCallable("Headers.toJSON", () => ({ ...normalized })),
   });
@@ -169,9 +169,7 @@ function createXMLHttpRequestConstructor(rules: readonly NetworkRuleDefinition[]
         { reason: "constructor required" },
       );
     },
-    {
-      construct: () => createXMLHttpRequestInstance(rules),
-    },
+    { construct: () => createXMLHttpRequestInstance(rules) },
   );
 }
 
@@ -199,27 +197,32 @@ function createXMLHttpRequestInstance(rules: readonly NetworkRuleDefinition[]): 
     onload: null,
     onerror: null,
     onloadend: null,
-    open: createNativeCallable("XMLHttpRequest.open", ([nextMethod, nextUrl], _context, thisValue) => {
-      const xhr = asXHRRecord(thisValue);
-      method = normalizeRequestMethod(nextMethod);
-      url = normalizeRequestUrl(nextUrl).href;
-      requestHeaders = Object.create(null);
-      responseHeaders.current = Object.freeze(Object.create(null) as Record<string, string>);
-      setRecordProperty(xhr, "readyState", 1);
-      setRecordProperty(xhr, "status", 0);
-      setRecordProperty(xhr, "statusText", "");
-      setRecordProperty(xhr, "responseURL", "");
-      setRecordProperty(xhr, "responseText", "");
-      setRecordProperty(xhr, "response", "");
-      return undefined;
-    }),
+    open: createNativeCallable(
+      "XMLHttpRequest.open",
+      ([nextMethod, nextUrl], _context, thisValue) => {
+        const xhr = asXHRRecord(thisValue);
+        method = normalizeRequestMethod(nextMethod);
+        url = normalizeRequestUrl(nextUrl).href;
+        requestHeaders = Object.create(null);
+        responseHeaders.current = Object.freeze(Object.create(null) as Record<string, string>);
+        setRecordProperty(xhr, "readyState", 1);
+        setRecordProperty(xhr, "status", 0);
+        setRecordProperty(xhr, "statusText", "");
+        setRecordProperty(xhr, "responseURL", "");
+        setRecordProperty(xhr, "responseText", "");
+        setRecordProperty(xhr, "response", "");
+        return undefined;
+      },
+    ),
     setRequestHeader: createNativeCallable("XMLHttpRequest.setRequestHeader", ([name, value]) => {
       assertHeaderName(String(name));
       requestHeaders[String(name)] = String(value);
       return undefined;
     }),
-    getResponseHeader: createNativeCallable("XMLHttpRequest.getResponseHeader", ([name]) =>
-      normalizeHeaderRecord(responseHeaders.current)[String(name).toLowerCase()] ?? null,
+    getResponseHeader: createNativeCallable(
+      "XMLHttpRequest.getResponseHeader",
+      ([name]) =>
+        normalizeHeaderRecord(responseHeaders.current)[String(name).toLowerCase()] ?? null,
     ),
     getAllResponseHeaders: createNativeCallable("XMLHttpRequest.getAllResponseHeaders", () =>
       Object.entries(responseHeaders.current)
@@ -233,11 +236,7 @@ function createXMLHttpRequestInstance(rules: readonly NetworkRuleDefinition[]): 
         setRecordProperty(xhr, "readyState", 2);
         await dispatchXHREvent(xhr, "readystatechange", context, tools);
         const response = await performHostNetworkRequest(
-          [url, {
-            method,
-            headers: requestHeaders,
-            body: normalizeRequestBody(body),
-          }],
+          [url, { method, headers: requestHeaders, body: normalizeRequestBody(body) }],
           rules,
         );
         responseHeaders.current = response.headers;
@@ -282,11 +281,9 @@ async function dispatchXHREvent(
 
 function normalizeRequestUrl(value: unknown): URL {
   if (typeof value !== "string") {
-    throw new VMError(
-      VMErrorCode.VMRuntimeError,
-      "VM network request URL must be a string.",
-      { valueType: typeof value },
-    );
+    throw new VMError(VMErrorCode.VMRuntimeError, "VM network request URL must be a string.", {
+      valueType: typeof value,
+    });
   }
 
   try {
@@ -298,11 +295,9 @@ function normalizeRequestUrl(value: unknown): URL {
 
     return url;
   } catch {
-    throw new VMError(
-      VMErrorCode.VMRuntimeError,
-      `Invalid VM network request URL "${value}".`,
-      { reason: "invalid URL" },
-    );
+    throw new VMError(VMErrorCode.VMRuntimeError, `Invalid VM network request URL "${value}".`, {
+      reason: "invalid URL",
+    });
   }
 }
 
@@ -444,7 +439,8 @@ function assertHeaderName(name: string): void {
 }
 
 function isHttpMethod(method: string): method is HttpMethod {
-  return method === "GET" ||
+  return (
+    method === "GET" ||
     method === "HEAD" ||
     method === "POST" ||
     method === "PUT" ||
@@ -452,7 +448,8 @@ function isHttpMethod(method: string): method is HttpMethod {
     method === "DELETE" ||
     method === "OPTIONS" ||
     method === "TRACE" ||
-    method === "CONNECT";
+    method === "CONNECT"
+  );
 }
 
 function asXHRRecord(value: unknown): VMRecord {

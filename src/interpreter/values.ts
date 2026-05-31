@@ -73,28 +73,16 @@ export function createVMSymbol(
   const symbol = Object.create(null) as VMSymbol;
 
   Object.defineProperties(symbol, {
-    kind: {
-      enumerable: true,
-      value: "vm-symbol",
-    },
-    id: {
-      enumerable: true,
-      value: nextSymbolId++,
-    },
+    kind: { enumerable: true, value: "vm-symbol" },
+    id: { enumerable: true, value: nextSymbolId++ },
   });
 
   if (description !== undefined) {
-    Object.defineProperty(symbol, "description", {
-      enumerable: true,
-      value: description,
-    });
+    Object.defineProperty(symbol, "description", { enumerable: true, value: description });
   }
 
   if (options.registryKey !== undefined) {
-    Object.defineProperty(symbol, "registryKey", {
-      enumerable: true,
-      value: options.registryKey,
-    });
+    Object.defineProperty(symbol, "registryKey", { enumerable: true, value: options.registryKey });
   }
 
   if (options.wellKnownName !== undefined) {
@@ -121,10 +109,7 @@ export function createHostCallable(
   handler: VMCapabilityHandler,
   options?: CreateVMCapabilityOptions,
 ): VMGuestCallable;
-export function createHostCallable(
-  name: string,
-  capability: VMCapability,
-): VMGuestCallable;
+export function createHostCallable(name: string, capability: VMCapability): VMGuestCallable;
 export function createHostCallable(
   name: string,
   handlerOrCapability: VMCapabilityHandler | VMCapability,
@@ -136,14 +121,8 @@ export function createHostCallable(
   const callable = Object.create(null) as VMGuestCallable;
 
   Object.defineProperties(callable, {
-    kind: {
-      enumerable: true,
-      value: "host-callable",
-    },
-    metadata: {
-      enumerable: true,
-      value: copyCapabilityMetadata(capability.metadata),
-    },
+    kind: { enumerable: true, value: "host-callable" },
+    metadata: { enumerable: true, value: copyCapabilityMetadata(capability.metadata) },
   });
 
   hostCallableRecords.set(callable, { capability });
@@ -174,7 +153,9 @@ function copyCapabilityMetadata(metadata: VMCapabilityMetadata): VMCapabilityMet
 }
 
 export function isHostCallable(value: unknown): value is VMGuestCallable {
-  return typeof value === "object" && value !== null && hostCallableRecords.has(value as VMGuestCallable);
+  return (
+    typeof value === "object" && value !== null && hostCallableRecords.has(value as VMGuestCallable)
+  );
 }
 
 export function createNativeCallable(
@@ -203,30 +184,22 @@ export function createNativeCallable(
   });
 
   Object.defineProperties(callable, {
-    kind: {
-      enumerable: true,
-      value: "native-callable",
-    },
-    metadata: {
-      enumerable: true,
-      value: metadata,
-    },
-    constructable: {
-      enumerable: true,
-      value: options.construct !== undefined,
-    },
+    kind: { enumerable: true, value: "native-callable" },
+    metadata: { enumerable: true, value: metadata },
+    constructable: { enumerable: true, value: options.construct !== undefined },
   });
 
-  nativeCallableRecords.set(callable, {
-    call,
-    construct: options.construct,
-  });
+  nativeCallableRecords.set(callable, { call, construct: options.construct });
 
   return Object.freeze(callable);
 }
 
 export function isNativeCallable(value: unknown): value is VMNativeCallable {
-  return typeof value === "object" && value !== null && nativeCallableRecords.has(value as VMNativeCallable);
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    nativeCallableRecords.has(value as VMNativeCallable)
+  );
 }
 
 export async function invokeHostCallable(

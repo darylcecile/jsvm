@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
+
 import { VM, VMErrorCode, type VMFailureResult, type VMResult } from "../src/index";
 
 export const DEFAULT_TEST262_FILTERS = Object.freeze([
@@ -226,10 +227,7 @@ export function getTest262HarnessIncludeSource(
 }
 
 export function createTest262HarnessVM(timeoutMs: number): VM {
-  return new VM({
-    capabilities: { dynamicCode: true },
-    executionRules: { timeLimit: timeoutMs },
-  });
+  return new VM({ capabilities: { dynamicCode: true }, executionRules: { timeLimit: timeoutMs } });
 }
 
 export interface ParsedTest262Args {
@@ -245,10 +243,7 @@ export interface Test262Metadata {
   readonly flags: readonly string[];
   readonly includes: readonly string[];
   readonly features: readonly string[];
-  readonly negative?: {
-    readonly phase?: string;
-    readonly type?: string;
-  };
+  readonly negative?: { readonly phase?: string; readonly type?: string };
 }
 
 export interface Test262HarnessOptions {
@@ -580,7 +575,9 @@ function discoverTestFiles(options: Test262HarnessOptions): string[] {
   }
 
   const sorted = files.sort((left, right) =>
-    normalizePath(relative(test262Dir, left)).localeCompare(normalizePath(relative(test262Dir, right))),
+    normalizePath(relative(test262Dir, left)).localeCompare(
+      normalizePath(relative(test262Dir, right)),
+    ),
   );
 
   return options.limit ? sorted.slice(0, options.limit) : sorted;
@@ -657,9 +654,7 @@ async function runTest262File(
         };
       }
 
-      const includeResult = await vm.eval(includeSource.source, {
-        timeLimit: options.timeoutMs,
-      });
+      const includeResult = await vm.eval(includeSource.source, { timeLimit: options.timeoutMs });
 
       if (!includeResult.ok) {
         const sourceKind = includeSource.shimmed ? "harness shim" : "harness include";
@@ -707,21 +702,13 @@ function formatVMFailure(result: VMFailureResult): string {
 }
 
 function summarizeResults(results: readonly Test262FileResult[]): Test262RunSummary {
-  const counts = {
-    pass: 0,
-    fail: 0,
-    unsupported: 0,
-  };
+  const counts = { pass: 0, fail: 0, unsupported: 0 };
 
   for (const result of results) {
     counts[result.status] += 1;
   }
 
-  return {
-    total: results.length,
-    ...counts,
-    results,
-  };
+  return { total: results.length, ...counts, results };
 }
 
 function normalizePath(path: string): string {

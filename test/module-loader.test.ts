@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import {
   VM,
   VMError,
@@ -42,10 +43,7 @@ describe("module loader", () => {
       loader.load({ specifier: "./dep.js" }),
       VMErrorCode.VMSecurityError,
     );
-    expect(loadError.details).toMatchObject({
-      path: "./dep.js",
-      reason: "module loader denied",
-    });
+    expect(loadError.details).toMatchObject({ path: "./dep.js", reason: "module loader denied" });
   });
 
   test("normalizes requests and loader responses into frozen plain data", async () => {
@@ -57,20 +55,12 @@ describe("module loader", () => {
         return {
           specifier: "/virtual/dep.js",
           referrer: request.referrer,
-          attributes: {
-            kind: "static",
-            list: [1, undefined, "ok"],
-          },
+          attributes: { kind: "static", list: [1, undefined, "ok"] },
         };
       },
       load(request) {
         observedLoadRequest = request;
-        return {
-          source: "export const value = 1;",
-          attributes: {
-            nested: { ok: true },
-          },
-        };
+        return { source: "export const value = 1;", attributes: { nested: { ok: true } } };
       },
     });
 
@@ -92,10 +82,7 @@ describe("module loader", () => {
     expect(resolution.type).toBe("module-resolution");
     expect(resolution.specifier).toBe("/virtual/dep.js");
     expect(resolution.referrer).toBe("main.js");
-    expect(resolution.attributes).toEqual({
-      kind: "static",
-      list: [1, undefined, "ok"],
-    });
+    expect(resolution.attributes).toEqual({ kind: "static", list: [1, undefined, "ok"] });
     expect(Object.isFrozen(resolution)).toBe(true);
     expect(Object.isFrozen(resolution.attributes as object)).toBe(true);
     expect(Object.isFrozen((resolution.attributes as { list: unknown[] }).list)).toBe(true);
@@ -112,9 +99,7 @@ describe("module loader", () => {
   });
 
   test("rejects invalid loader declarations, requests, and callback results", async () => {
-    expect(() =>
-      normalizeModuleLoader({ resolve: "not a function" as never }),
-    ).toThrow(VMError);
+    expect(() => normalizeModuleLoader({ resolve: "not a function" as never })).toThrow(VMError);
     expect(() =>
       normalizeModuleLoader({ resolve: () => "./x.js", ambient: true } as never),
     ).toThrow(VMError);
@@ -130,9 +115,7 @@ describe("module loader", () => {
       VMErrorCode.BoundaryUnsupportedType,
     );
 
-    const badResolution = normalizeModuleLoader({
-      resolve: () => ({ specifier: " ./x.js " }),
-    });
+    const badResolution = normalizeModuleLoader({ resolve: () => ({ specifier: " ./x.js " }) });
     await expectRejectedVMError(
       badResolution.resolve({ specifier: "./x.js" }),
       VMErrorCode.BoundaryUnsupportedType,
@@ -171,9 +154,7 @@ describe("module loader", () => {
       });
     }
 
-    const exportOnly = await vm.evaluate("export const value = 1;", {
-      sourceType: "module",
-    });
+    const exportOnly = await vm.evaluate("export const value = 1;", { sourceType: "module" });
     expect(exportOnly.ok).toBe(true);
     if (exportOnly.ok) {
       expect(exportOnly.value).toEqual({ value: 1 });
@@ -196,9 +177,7 @@ describe("module loader", () => {
     const vm = new VM({ capabilities: { moduleLoader } });
     await vm.start();
 
-    const result = await vm.evaluate("import './dep.js';", {
-      sourceType: "module",
-    });
+    const result = await vm.evaluate("import './dep.js';", { sourceType: "module" });
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -301,20 +280,14 @@ describe("module loader", () => {
     expect(imported.value.specifier).toBe("math");
     expect(imported.value.exports()).toEqual(["add", "fail", "value"]);
     expect(await imported.value.get("value")).toEqual({ ok: true, value: 3 });
-    expect(await imported.value.call("add", 2, 4)).toEqual({
-      ok: true,
-      value: { sum: 9 },
-    });
+    expect(await imported.value.call("add", 2, 4)).toEqual({ ok: true, value: { sum: 9 } });
 
     const add = imported.value.getFunction("add");
     expect(add.ok).toBe(true);
     if (!add.ok) {
       throw new Error("Expected function export handle.");
     }
-    expect(await add.value.call(1, 2)).toEqual({
-      ok: true,
-      value: { sum: 6 },
-    });
+    expect(await add.value.call(1, 2)).toEqual({ ok: true, value: { sum: 6 } });
 
     expect(imported.value.getFunction("value").ok).toBe(false);
     const failed = await imported.value.call("fail");
@@ -340,10 +313,9 @@ describe("module loader", () => {
     const vm = new VM();
     await vm.start();
 
-    const moduleResult = await vm.evaluate(
-      "const secret = 1; export const visible = secret + 1;",
-      { sourceType: "module" },
-    );
+    const moduleResult = await vm.evaluate("const secret = 1; export const visible = secret + 1;", {
+      sourceType: "module",
+    });
     expect(moduleResult.ok).toBe(true);
     if (moduleResult.ok) {
       expect(moduleResult.value).toEqual({ visible: 2 });
@@ -358,9 +330,7 @@ describe("module loader", () => {
   });
 
   test("VM reports module loader, missing export, module throw, and cycle failures", async () => {
-    const deniedLoader = normalizeModuleLoader({
-      resolve: ({ specifier }) => specifier,
-    });
+    const deniedLoader = normalizeModuleLoader({ resolve: ({ specifier }) => specifier });
     const deniedVM = new VM({ capabilities: { moduleLoader: deniedLoader } });
     await deniedVM.start();
     const denied = await deniedVM.evaluate("import 'dep';", { sourceType: "module" });

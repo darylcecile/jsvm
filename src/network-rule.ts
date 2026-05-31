@@ -46,19 +46,12 @@ export interface NetworkRuleBuilder {
   toJSON(): NetworkRuleDefinition;
 }
 
-export const HTTP_METHODS: readonly HttpMethod[] = Object.freeze([
-  ...SUPPORTED_HTTP_METHODS,
-]);
+export const HTTP_METHODS: readonly HttpMethod[] = Object.freeze([...SUPPORTED_HTTP_METHODS]);
 
 const HTTP_METHOD_SET: ReadonlySet<string> = new Set(SUPPORTED_HTTP_METHODS);
 
 export function networkRule(host: string): NetworkRuleBuilder {
-  return createNetworkRuleBuilder(
-    normalizeHost(host),
-    "none",
-    "none",
-    freezeHeaders({}),
-  );
+  return createNetworkRuleBuilder(normalizeHost(host), "none", "none", freezeHeaders({}));
 }
 
 function createNetworkRuleBuilder(
@@ -67,46 +60,25 @@ function createNetworkRuleBuilder(
   paths: NetworkRuleScope<PathGlob>,
   headers: NetworkRuleHeaders,
 ): NetworkRuleBuilder {
-  const allow: NetworkRuleAllowDefinition = Object.freeze({
-    methods,
-    paths,
-  });
+  const allow: NetworkRuleAllowDefinition = Object.freeze({ methods, paths });
   const definition: NetworkRuleDefinition = Object.freeze({
     type: "network-rule",
     host,
     allow,
     headers,
   });
-  const builder = {
-    type: "network-rule" as const,
-    host,
-    methods,
-    paths,
-    headers,
-  };
+  const builder = { type: "network-rule" as const, host, methods, paths, headers };
 
   Object.defineProperties(builder, {
     allow: {
       value: (options?: NetworkRuleAllowOptions) =>
-        createNetworkRuleBuilder(
-          host,
-          normalizeMethods(options),
-          normalizePaths(options),
-          headers,
-        ),
+        createNetworkRuleBuilder(host, normalizeMethods(options), normalizePaths(options), headers),
     },
     setHeaders: {
       value: (nextHeaders: NetworkRuleHeaders) =>
-        createNetworkRuleBuilder(
-          host,
-          methods,
-          paths,
-          freezeHeaders(nextHeaders),
-        ),
+        createNetworkRuleBuilder(host, methods, paths, freezeHeaders(nextHeaders)),
     },
-    toJSON: {
-      value: () => definition,
-    },
+    toJSON: { value: () => definition },
   });
 
   return Object.freeze(builder) as NetworkRuleBuilder;
@@ -153,9 +125,7 @@ function normalizeHost(host: string): string {
   return host.toLowerCase();
 }
 
-function normalizeMethods(
-  options?: NetworkRuleAllowOptions,
-): NetworkRuleScope<HttpMethod> {
+function normalizeMethods(options?: NetworkRuleAllowOptions): NetworkRuleScope<HttpMethod> {
   const methods = normalizeAllowOptions(options).methods;
 
   if (methods === undefined) {
@@ -183,9 +153,7 @@ function normalizeMethods(
   );
 }
 
-function normalizePaths(
-  options?: NetworkRuleAllowOptions,
-): NetworkRuleScope<PathGlob> {
+function normalizePaths(options?: NetworkRuleAllowOptions): NetworkRuleScope<PathGlob> {
   const paths = normalizeAllowOptions(options).paths;
 
   if (paths === undefined) {
@@ -228,9 +196,7 @@ function normalizePaths(
   );
 }
 
-function normalizeAllowOptions(
-  options?: NetworkRuleAllowOptions,
-): NetworkRuleAllowOptions {
+function normalizeAllowOptions(options?: NetworkRuleAllowOptions): NetworkRuleAllowOptions {
   if (options === undefined) {
     return {};
   }

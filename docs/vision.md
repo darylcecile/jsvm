@@ -258,4 +258,4 @@ JSVM succeeds when a developer can confidently create a VM, run untrusted JavaSc
 
 The library should make safe usage straightforward, unsafe usage (limited and) obvious, and future ECMAScript maintenance achievable.
 
-Look at test262, and run it (all of the non-browser/DOM dependant tests) in the VM to validate compatibility. Add tests for security boundaries and capability enforcement. Document any known limitations or edge cases clearly in the README. 
+Look at test262, and run it (all of the non-browser/DOM dependant tests) in the VM to validate compatibility. Add tests for security boundaries and capability enforcement. Document any known limitations or edge cases clearly in the README.

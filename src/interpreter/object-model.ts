@@ -64,9 +64,7 @@ export interface VMAccessorPropertyDescriptor {
   readonly configurable: boolean;
 }
 
-export type VMPropertyDescriptor =
-  | VMDataPropertyDescriptor
-  | VMAccessorPropertyDescriptor;
+export type VMPropertyDescriptor = VMDataPropertyDescriptor | VMAccessorPropertyDescriptor;
 
 interface VMObjectRecord {
   readonly objectKind: VMObjectKind;
@@ -148,16 +146,10 @@ export function createArrayLikeObject(
 export function createVMCallablePlaceholder(name?: string): VMCallablePlaceholder {
   const callable = Object.create(null) as VMCallablePlaceholder;
 
-  Object.defineProperty(callable, "kind", {
-    enumerable: true,
-    value: "vm-callable",
-  });
+  Object.defineProperty(callable, "kind", { enumerable: true, value: "vm-callable" });
 
   if (name !== undefined) {
-    Object.defineProperty(callable, "name", {
-      enumerable: true,
-      value: name,
-    });
+    Object.defineProperty(callable, "name", { enumerable: true, value: name });
   }
 
   callableRecords.add(callable);
@@ -288,9 +280,7 @@ export function ownKeys(object: VMObject): readonly VMPropertyKey[] {
     return Object.freeze(keys);
   }
 
-  const indexKeys = keys
-    .filter(isArrayIndex)
-    .sort((left, right) => Number(left) - Number(right));
+  const indexKeys = keys.filter(isArrayIndex).sort((left, right) => Number(left) - Number(right));
   const stringKeys = keys.filter(
     (key): key is string => typeof key === "string" && !isArrayIndex(key),
   );
@@ -302,17 +292,9 @@ export function ownKeys(object: VMObject): readonly VMPropertyKey[] {
 function createObject(objectKind: VMObjectKind, prototype: VMObject | null): VMObject {
   const object = Object.create(null) as VMObject;
 
-  Object.defineProperty(object, "kind", {
-    enumerable: false,
-    value: "vm-object",
-  });
+  Object.defineProperty(object, "kind", { enumerable: false, value: "vm-object" });
 
-  objectRecords.set(object, {
-    extensible: true,
-    objectKind,
-    properties: new Map(),
-    prototype,
-  });
+  objectRecords.set(object, { extensible: true, objectKind, properties: new Map(), prototype });
 
   return Object.freeze(object);
 }
@@ -436,9 +418,7 @@ function defineArrayLengthProperty(
     enumerable: false,
     kind: "data",
     value: newLength,
-    writable: normalized.hasWritable
-      ? normalized.writable
-      : isArrayLengthWritable(record),
+    writable: normalized.hasWritable ? normalized.writable : isArrayLengthWritable(record),
   };
 
   return defineOrdinaryOwnProperty(record, "length", lengthInput);
@@ -574,9 +554,9 @@ function createPropertyRecord(descriptor: NormalizedPropertyDescriptor): VMPrope
     return {
       configurable: descriptor.configurable ?? false,
       enumerable: descriptor.enumerable ?? false,
-      get: descriptor.hasGet ? descriptor.get ?? null : null,
+      get: descriptor.hasGet ? (descriptor.get ?? null) : null,
       kind: "accessor",
-      set: descriptor.hasSet ? descriptor.set ?? null : null,
+      set: descriptor.hasSet ? (descriptor.set ?? null) : null,
     };
   }
 
@@ -597,22 +577,20 @@ function updatePropertyRecord(
   const configurable = descriptor.hasConfigurable
     ? descriptor.configurable === true
     : current.configurable;
-  const enumerable = descriptor.hasEnumerable
-    ? descriptor.enumerable === true
-    : current.enumerable;
+  const enumerable = descriptor.hasEnumerable ? descriptor.enumerable === true : current.enumerable;
 
   if (descriptorKind === "accessor") {
     return {
       configurable,
       enumerable,
       get: descriptor.hasGet
-        ? descriptor.get ?? null
+        ? (descriptor.get ?? null)
         : current.kind === "accessor"
           ? current.get
           : null,
       kind: "accessor",
       set: descriptor.hasSet
-        ? descriptor.set ?? null
+        ? (descriptor.set ?? null)
         : current.kind === "accessor"
           ? current.set
           : null,
@@ -706,26 +684,11 @@ function copyPropertyDescriptor(descriptor: VMPropertyRecord): VMPropertyDescrip
     const copy = Object.create(null) as VMAccessorPropertyDescriptor;
 
     Object.defineProperties(copy, {
-      configurable: {
-        enumerable: true,
-        value: descriptor.configurable,
-      },
-      enumerable: {
-        enumerable: true,
-        value: descriptor.enumerable,
-      },
-      get: {
-        enumerable: true,
-        value: descriptor.get,
-      },
-      kind: {
-        enumerable: true,
-        value: "accessor",
-      },
-      set: {
-        enumerable: true,
-        value: descriptor.set,
-      },
+      configurable: { enumerable: true, value: descriptor.configurable },
+      enumerable: { enumerable: true, value: descriptor.enumerable },
+      get: { enumerable: true, value: descriptor.get },
+      kind: { enumerable: true, value: "accessor" },
+      set: { enumerable: true, value: descriptor.set },
     });
 
     return Object.freeze(copy);
@@ -734,26 +697,11 @@ function copyPropertyDescriptor(descriptor: VMPropertyRecord): VMPropertyDescrip
   const copy = Object.create(null) as VMDataPropertyDescriptor;
 
   Object.defineProperties(copy, {
-    configurable: {
-      enumerable: true,
-      value: descriptor.configurable,
-    },
-    enumerable: {
-      enumerable: true,
-      value: descriptor.enumerable,
-    },
-    kind: {
-      enumerable: true,
-      value: "data",
-    },
-    value: {
-      enumerable: true,
-      value: descriptor.value,
-    },
-    writable: {
-      enumerable: true,
-      value: descriptor.writable,
-    },
+    configurable: { enumerable: true, value: descriptor.configurable },
+    enumerable: { enumerable: true, value: descriptor.enumerable },
+    kind: { enumerable: true, value: "data" },
+    value: { enumerable: true, value: descriptor.value },
+    writable: { enumerable: true, value: descriptor.writable },
   });
 
   return Object.freeze(copy);
@@ -780,12 +728,7 @@ function isArrayIndex(key: VMPropertyKey): key is string {
 
   const index = Number(key);
 
-  return (
-    Number.isInteger(index) &&
-    index >= 0 &&
-    index < maxArrayLength &&
-    String(index) === key
-  );
+  return Number.isInteger(index) && index >= 0 && index < maxArrayLength && String(index) === key;
 }
 
 function normalizeArrayLength(value: unknown): number {
