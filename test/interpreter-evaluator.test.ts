@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import { VMError, VMErrorCode } from "../src/boundary";
 import { createEvaluatorContext, evaluateSource } from "../src/interpreter/evaluator";

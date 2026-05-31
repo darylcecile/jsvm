@@ -103,10 +103,7 @@ describe("module loader", () => {
   test("rejects invalid loader declarations, requests, and callback results", async () => {
     expect(() => normalizeModuleLoader({ resolve: "not a function" as never })).toThrow(VMError);
     expect(() =>
-      normalizeModuleLoader({
-        resolve: () => "./x.js",
-        ambient: true,
-      } as never),
+      normalizeModuleLoader({ resolve: () => "./x.js", ambient: true } as never),
     ).toThrow(VMError);
 
     const missingResolve = normalizeModuleLoader({});
