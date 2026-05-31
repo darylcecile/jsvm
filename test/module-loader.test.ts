@@ -187,6 +187,38 @@ describe("module loader", () => {
     expect(loadedSpecifiers).toEqual(["./dep.js"]);
   });
 
+  test("VM can retry module evaluation after step budget exhaustion", async () => {
+    const moduleLoader: VMNormalizedModuleLoader = normalizeModuleLoader({
+      resolve(request) {
+        return request.specifier;
+      },
+      load(request) {
+        if (request.specifier !== "entry") {
+          throw new VMError(VMErrorCode.VMSecurityError, "Unknown module specifier.", {
+            path: request.specifier,
+            reason: "module loader denied",
+          });
+        }
+        return "let i = 0; while (i < 10) { i += 1; } export const value = i;";
+      },
+    });
+    const vm = new VM({ capabilities: { moduleLoader } });
+    await vm.start();
+
+    const firstAttempt = await vm.import("entry", { maxSteps: 5 });
+    expect(firstAttempt.ok).toBe(false);
+    if (!firstAttempt.ok) {
+      expect(firstAttempt.error.code).toBe(VMErrorCode.VMStepsExceededError);
+    }
+
+    const secondAttempt = await vm.import("entry", { maxSteps: 100 });
+    expect(secondAttempt.ok).toBe(true);
+    if (secondAttempt.ok) {
+      const valueResult = await secondAttempt.value.get("value");
+      expect(valueResult).toEqual({ ok: true, value: 10 });
+    }
+  });
+
   test("VM evaluates named, default, namespace imports, and re-exports", async () => {
     const sources = new Map([
       [
@@ -326,6 +358,33 @@ describe("module loader", () => {
     if (!globalRead.ok) {
       expect(globalRead.error.code).toBe(VMErrorCode.VMRuntimeError);
       expect(globalRead.error.details.reason).toBe("missing binding");
+    }
+  });
+
+  test("VM can retry module evaluation after step budget exhaustion", async () => {
+    const moduleLoader = normalizeModuleLoader({
+      resolve: ({ specifier }) => specifier,
+      load: () => `
+        let total = 0;
+        for (let i = 0; i < 50; i++) {
+          total += i;
+        }
+        export const value = total;
+      `,
+    });
+    const vm = new VM({ capabilities: { moduleLoader } });
+    await vm.start();
+
+    const exhausted = await vm.import("math", { maxSteps: 5 });
+    expect(exhausted.ok).toBe(false);
+    if (!exhausted.ok) {
+      expect(exhausted.error.code).toBe(VMErrorCode.VMStepsExceededError);
+    }
+
+    const recovered = await vm.import("math", { maxSteps: 500 });
+    expect(recovered.ok).toBe(true);
+    if (recovered.ok) {
+      expect(await recovered.value.get("value")).toEqual({ ok: true, value: 1225 });
     }
   });
 

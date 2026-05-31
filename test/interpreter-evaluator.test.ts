@@ -45,7 +45,7 @@ describe("interpreter evaluator", () => {
       evaluateSource("while (true) {}", {
         context: createEvaluatorContext({ budget: { maxSteps: 20 } }),
       }),
-    ).rejects.toMatchObject({ code: VMErrorCode.VMTimeoutError });
+    ).rejects.toMatchObject({ code: VMErrorCode.VMStepsExceededError });
   });
 
   test("supports guest functions and arrow functions", async () => {
@@ -276,7 +276,6 @@ describe("interpreter evaluator", () => {
         { context },
       ),
     ).resolves.toEqual([1, 11]);
-
     expect((observedArgs[0] as { nested: { value: number } }).nested.value).toBe(99);
     expect(hostResult.nested.value).toBe(10);
   });

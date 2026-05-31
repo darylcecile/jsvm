@@ -9,6 +9,7 @@ import {
   type VMBoundaryValue,
   type VMCapability,
   type VMCapabilityHandler,
+  type VMErrorDetails,
   type VMSerializableValue,
   type VMSerializedValue,
 } from "./boundary";
@@ -17,8 +18,8 @@ import {
   createDynamicCodeGlobals,
   createEvaluatorContext,
   evaluateProgram,
-  exportGuestValueForHost,
   executeProgramForSideEffects,
+  exportGuestValueForHost,
   invokeGuestCallableForHost,
   isGuestCallableValue,
   serializeGuestValueForSnapshot,
@@ -33,8 +34,8 @@ import { createExecutionContext, type VMExecutionContext } from "./interpreter/r
 import { createHostCallable, type VMGuestCallable } from "./interpreter/values";
 import {
   normalizeModuleLoader,
-  type VMModuleResolution,
   type VMModuleLoader,
+  type VMModuleResolution,
   type VMModuleSource,
   type VMNormalizedModuleLoader,
 } from "./module-loader";
@@ -51,6 +52,13 @@ export interface VMExecutionRules {
    * isolation guarantee.
    */
   readonly timeLimit?: number;
+
+  /**
+   * Best-effort step budget for interpreter checkpoints.
+   *
+   * This is a cooperative guardrail, not an instruction-accurate counter.
+   */
+  readonly maxSteps?: number;
 }
 
 export interface VMNumbersConfig {
@@ -89,11 +97,13 @@ export interface VMOptions {
 
 export interface VMEvaluateOptions {
   readonly timeLimit?: number;
+  readonly maxSteps?: number;
   readonly sourceType?: VMParserSourceType;
 }
 
 export interface VMImportOptions {
   readonly timeLimit?: number;
+  readonly maxSteps?: number;
 }
 
 export interface VMDangerousEvaluateUrlOptions extends VMEvaluateOptions {
@@ -156,7 +166,7 @@ interface InstalledCapability {
 
 type ASTNode = { readonly type: string; readonly [key: string]: unknown };
 
-type VMModuleStatus = "new" | "linking" | "linked" | "evaluating" | "evaluated";
+type VMModuleStatus = "new" | "linking" | "linked" | "evaluating" | "evaluated" | "failed";
 
 interface VMModuleRecord {
   readonly specifier: string;
@@ -169,6 +179,7 @@ interface VMModuleRecord {
   parsed?: ParsedModuleRecord;
   exports?: Map<string, unknown>;
   namespace?: VMObject;
+  failure?: VMError;
 }
 
 interface ParsedModuleRecord {
@@ -527,7 +538,8 @@ export class VM {
 
     try {
       const timeLimit = normalizeTimeLimit(options.timeLimit ?? this.#executionRules.timeLimit);
-      const evaluationContext = this.#createEvaluationContext(timeLimit);
+      const maxSteps = normalizeMaxSteps(options.maxSteps ?? this.#executionRules.maxSteps);
+      const evaluationContext = this.#createEvaluationContext(timeLimit, maxSteps);
       const program = parseProgram(source, { sourceType: options.sourceType });
 
       if (program.sourceType === "module") {
@@ -712,7 +724,8 @@ export class VM {
       }
 
       const timeLimit = normalizeTimeLimit(options.timeLimit ?? this.#executionRules.timeLimit);
-      const rootContext = this.#createEvaluationContext(timeLimit);
+      const maxSteps = normalizeMaxSteps(options.maxSteps ?? this.#executionRules.maxSteps);
+      const rootContext = this.#createEvaluationContext(timeLimit, maxSteps);
       const record = await this.#loadRootModule(specifier, rootContext);
       await this.#evaluateModuleRecord(record, this.#moduleGraph, []);
 
@@ -814,6 +827,16 @@ export class VM {
       return;
     }
 
+    if (record.status === "failed") {
+      throw (
+        record.failure ??
+        new VMError(VMErrorCode.VMRuntimeError, "Module evaluation failed.", {
+          path: record.specifier,
+          reason: "module evaluation failed",
+        })
+      );
+    }
+
     if (record.status === "evaluating" || record.status === "linking") {
       throw moduleRuntimeError("Cyclic ES module graphs are not supported yet.", {
         path: [...stack, record.specifier].join(" -> "),
@@ -858,10 +881,18 @@ export class VM {
       record.namespace = createModuleNamespaceObject(record.exports);
       record.status = "evaluated";
     } catch (error) {
-      if (record.status !== "evaluated") {
+      const failure = toVMError(error);
+
+      if (isRetryableModuleFailure(failure)) {
+        graph.delete(record.specifier);
         record.status = "linked";
+        record.failure = undefined;
+      } else {
+        record.status = "failed";
+        record.failure = failure;
       }
-      throw error;
+
+      throw failure;
     }
   }
 
@@ -1009,7 +1040,10 @@ export class VM {
     return this.#context;
   }
 
-  #createEvaluationContext(timeLimit: number | undefined): VMExecutionContext {
+  #createEvaluationContext(
+    timeLimit: number | undefined,
+    maxSteps: number | undefined,
+  ): VMExecutionContext {
     const baseContext = this.#getContext();
     return createExecutionContext({
       globalEnvironment: baseContext.globalEnvironment,
@@ -1017,13 +1051,16 @@ export class VM {
       lexicalEnvironment: baseContext.globalEnvironment,
       thisValue: baseContext.globalObject,
       variableEnvironment: baseContext.globalEnvironment,
-      budget: { timeLimitMs: timeLimit },
+      budget: { timeLimitMs: timeLimit, maxSteps },
     });
   }
 
   #createHandleContext(generation: number): VMExecutionContext {
     this.#assertHandleUsable(generation);
-    return this.#createEvaluationContext(normalizeTimeLimit(this.#executionRules.timeLimit));
+    return this.#createEvaluationContext(
+      normalizeTimeLimit(this.#executionRules.timeLimit),
+      normalizeMaxSteps(this.#executionRules.maxSteps),
+    );
   }
 
   #assertHandleUsable(generation: number): void {
@@ -1253,6 +1290,22 @@ function normalizeMaxBytes(value: number | undefined): number | undefined {
       VMErrorCode.VMSecurityError,
       "URL evaluation maxBytes must be a non-negative safe integer.",
       { path: "maxBytes", reason: "invalid max bytes" },
+    );
+  }
+
+  return value;
+}
+
+function normalizeMaxSteps(value: number | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new VMError(
+      VMErrorCode.VMRuntimeError,
+      "executionRules.maxSteps must be a non-negative safe integer.",
+      { valueType: typeof value, reason: "invalid max steps", path: "maxSteps" },
     );
   }
 
@@ -1934,6 +1987,39 @@ function toVMError(error: unknown): VMError {
   return new VMError(VMErrorCode.VMRuntimeError, `Guest evaluation failed: ${String(error)}`, {
     valueType: typeof error,
   });
+}
+
+function isVMErrorCode(value: unknown): value is VMErrorCode {
+  return typeof value === "string" && (Object.values(VMErrorCode) as string[]).includes(value);
+}
+
+function isVMErrorRecord(
+  error: unknown,
+): error is { readonly code: VMErrorCode; readonly message: string; readonly details?: unknown } {
+  return (
+    isPlainObject(error) &&
+    isVMErrorCode(error.code) &&
+    typeof error.message === "string" &&
+    (error.details === undefined || error.details === null || typeof error.details === "object")
+  );
+}
+
+function isRetryableModuleFailure(error: VMError): boolean {
+  return (
+    error.code === VMErrorCode.VMTimeoutError || error.code === VMErrorCode.VMStepsExceededError
+  );
+}
+
+function normalizeVMErrorDetails(details: unknown): VMErrorDetails {
+  if (details === undefined || details === null) {
+    return {};
+  }
+
+  if (isPlainObject(details)) {
+    return details;
+  }
+
+  return { reason: String(details) };
 }
 
 function createSeededRandom(seed: string | number): () => number {

@@ -7,6 +7,7 @@ export const VMErrorCode = {
   VMRuntimeError: "VM_RUNTIME_ERROR",
   VMSecurityError: "VM_SECURITY_ERROR",
   VMTimeoutError: "VM_TIMEOUT_ERROR",
+  VMStepsExceededError: "VM_STEPS_EXCEEDED_ERROR",
   VMDisposed: "VM_DISPOSED",
   VMNotStarted: "VM_NOT_STARTED",
   VMSnapshotUnsupported: "VM_SNAPSHOT_UNSUPPORTED",
