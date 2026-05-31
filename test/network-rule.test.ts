@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { networkRule } from "../src/index";
 
 describe("networkRule", () => {
@@ -18,13 +19,8 @@ describe("networkRule", () => {
     expect(JSON.parse(JSON.stringify(rule))).toEqual({
       type: "network-rule",
       host: "example.com",
-      allow: {
-        methods: ["GET"],
-        paths: ["/api/*", "/home"],
-      },
-      headers: {
-        "X-API-Key": "secret",
-      },
+      allow: { methods: ["GET"], paths: ["/api/*", "/home"] },
+      headers: { "X-API-Key": "secret" },
     });
   });
 

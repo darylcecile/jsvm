@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { VMError, VMErrorCode, type VMResult } from "../src/index";
+
 import {
   classifyVMResult,
   getTest262HarnessIncludeSource,
@@ -9,6 +9,7 @@ import {
   parseTest262Metadata,
   runTest262,
 } from "../scripts/run-test262";
+import { VMError, VMErrorCode, type VMResult } from "../src/index";
 
 describe("test262 harness scaffold helpers", () => {
   test("parses CLI args with explicit directory, filters, limit, and timeout", () => {
@@ -73,21 +74,23 @@ negative:
       status: "fail",
       message: "VM_RUNTIME_ERROR: Test262Error: expected true",
     });
-    expect(classifyVMResult(unsupportedFailure, { flags: [], includes: [], features: [] })).toEqual({
-      status: "unsupported",
-      message: "VM_RUNTIME_ERROR (unsupported syntax): Only identifier bindings are supported.",
-    });
+    expect(classifyVMResult(unsupportedFailure, { flags: [], includes: [], features: [] })).toEqual(
+      {
+        status: "unsupported",
+        message: "VM_RUNTIME_ERROR (unsupported syntax): Only identifier bindings are supported.",
+      },
+    );
     expect(
-      classifyVMResult({ ok: true, value: 1 }, {
-        flags: [],
-        includes: [],
-        features: [],
-        negative: { phase: "runtime", type: "TypeError" },
-      }),
-    ).toEqual({
-      status: "fail",
-      message: "Expected negative test to fail during runtime.",
-    });
+      classifyVMResult(
+        { ok: true, value: 1 },
+        {
+          flags: [],
+          includes: [],
+          features: [],
+          negative: { phase: "runtime", type: "TypeError" },
+        },
+      ),
+    ).toEqual({ status: "fail", message: "Expected negative test to fail during runtime." });
   });
 
   test("reports static unsupported harness modes", () => {
@@ -117,11 +120,6 @@ negative:
       verbose: false,
     });
 
-    expect(summary).toMatchObject({
-      total: 2,
-      pass: 2,
-      fail: 0,
-      unsupported: 0,
-    });
+    expect(summary).toMatchObject({ total: 2, pass: 2, fail: 0, unsupported: 0 });
   });
 });

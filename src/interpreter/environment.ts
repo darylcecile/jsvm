@@ -169,9 +169,7 @@ export function createGlobalEnvironment(
   for (const [name, value] of Object.entries(bindings)) {
     environment.define(name, {
       kind: "var",
-      value: serializeAndReconstructBoundaryValue(value, {
-        allowCapabilities: false,
-      }),
+      value: serializeAndReconstructBoundaryValue(value, { allowCapabilities: false }),
       mutable: true,
       deletable: true,
       initialized: true,

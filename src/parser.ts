@@ -4,6 +4,7 @@ import {
   type Position,
   type Program,
 } from "acorn";
+
 import { VMError, VMErrorCode } from "./boundary";
 
 export type VMParserSourceType = "script" | "module";
@@ -28,10 +29,7 @@ interface AcornParseError extends SyntaxError {
 
 const DEFAULT_SOURCE_TYPE: VMParserSourceType = "script";
 
-export function parseProgram(
-  source: string,
-  options: VMParserOptions = {},
-): VMProgram {
+export function parseProgram(source: string, options: VMParserOptions = {}): VMProgram {
   if (typeof source !== "string") {
     throw new VMError(VMErrorCode.VMSyntaxError, "VM source must be a string.", {
       valueType: typeof source,

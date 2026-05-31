@@ -1,18 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import {
-  networkRule,
-  VM,
-  VMError,
-  VMErrorCode,
-  type VMResult,
-} from "../src/index";
 
-function expectVMFailure(
-  result: VMResult<unknown>,
-  code: VMErrorCode,
-): VMError {
+import { VM, VMError, VMErrorCode, networkRule, type VMResult } from "../src/index";
+
+function expectVMFailure(result: VMResult<unknown>, code: VMErrorCode): VMError {
   expect(result.ok).toBe(false);
   if (result.ok) {
     throw new Error(`Expected VM failure ${code}, got success.`);
@@ -51,30 +43,12 @@ describe("VM", () => {
   test("does not contain host eval or function-constructor execution sinks in src", () => {
     const unsafeMatches: string[] = [];
     const unsafePatterns = [
-      {
-        name: "Function constructor",
-        pattern: /\b(?:new\s+)?Function\s*\(/,
-      },
-      {
-        name: "AsyncFunction constructor",
-        pattern: /\b(?:new\s+)?AsyncFunction\s*\(/,
-      },
-      {
-        name: "direct eval",
-        pattern: /(^|[^\w$.])eval\s*\(/,
-      },
-      {
-        name: "indirect eval",
-        pattern: /\(\s*0\s*,\s*eval\s*\)\s*\(/,
-      },
-      {
-        name: "dynamic import",
-        pattern: /\bimport\s*\(/,
-      },
-      {
-        name: "host Proxy wrapper",
-        pattern: /\bnew\s+Proxy\s*\(/,
-      },
+      { name: "Function constructor", pattern: /\b(?:new\s+)?Function\s*\(/ },
+      { name: "AsyncFunction constructor", pattern: /\b(?:new\s+)?AsyncFunction\s*\(/ },
+      { name: "direct eval", pattern: /(^|[^\w$.])eval\s*\(/ },
+      { name: "indirect eval", pattern: /\(\s*0\s*,\s*eval\s*\)\s*\(/ },
+      { name: "dynamic import", pattern: /\bimport\s*\(/ },
+      { name: "host Proxy wrapper", pattern: /\bnew\s+Proxy\s*\(/ },
     ];
 
     for (const file of listSourceFiles()) {
@@ -90,9 +64,7 @@ describe("VM", () => {
           }
 
           if (pattern.test(line)) {
-            unsafeMatches.push(
-              `${relativeFile}:${index + 1}: ${name}: ${line.trim()}`,
-            );
+            unsafeMatches.push(`${relativeFile}:${index + 1}: ${name}: ${line.trim()}`);
           }
         }
       }
@@ -142,10 +114,7 @@ describe("VM", () => {
       expect(functionCalls).toBe(0);
       expect(evalCalls).toBe(0);
 
-      expect(await vm.eval(`globalThis.${marker} = true; 1;`)).toEqual({
-        ok: true,
-        value: 1,
-      });
+      expect(await vm.eval(`globalThis.${marker} = true; 1;`)).toEqual({ ok: true, value: 1 });
       expect(hostGlobal[marker]).toBeUndefined();
     } finally {
       Object.defineProperty(hostGlobal, "Function", {
@@ -166,62 +135,21 @@ describe("VM", () => {
     const vm = new VM();
     await vm.start();
 
-    expect(await vm.eval("counter = 1; counter + 2")).toEqual({
-      ok: true,
-      value: 3,
-    });
-    expect(await vm.evaluate("counter += 4; counter")).toEqual({
-      ok: true,
-      value: 5,
-    });
-    expect(
-      await vm.eval("let declaredCounter = counter + 1; declaredCounter"),
-    ).toEqual({
+    expect(await vm.eval("counter = 1; counter + 2")).toEqual({ ok: true, value: 3 });
+    expect(await vm.evaluate("counter += 4; counter")).toEqual({ ok: true, value: 5 });
+    expect(await vm.eval("let declaredCounter = counter + 1; declaredCounter")).toEqual({
       ok: true,
       value: 6,
     });
-    expect(await vm.eval("declaredCounter")).toEqual({
-      ok: true,
-      value: 6,
-    });
-  });
-
-  test("enforces execution step budgets", async () => {
-    const vm = new VM({ executionRules: { maxSteps: 3 } });
-    await vm.start();
-
-    expectVMFailure(
-      await vm.eval("let i = 0; while (true) { i += 1; }"),
-      VMErrorCode.VMStepsExceededError,
-    );
-
-    const overrideVm = new VM({ executionRules: { maxSteps: 100 } });
-    await overrideVm.start();
-
-    // Program that finishes under default budget but fails under a tight override.
-    const boundedProgram = "i = 0; while (i < 10) { i += 1; } i";
-    expect(await overrideVm.eval(boundedProgram)).toEqual({
-      ok: true,
-      value: 10,
-    });
-    expectVMFailure(
-      await overrideVm.eval(boundedProgram, { maxSteps: 5 }),
-      VMErrorCode.VMStepsExceededError,
-    );
+    expect(await vm.eval("declaredCounter")).toEqual({ ok: true, value: 6 });
   });
 
   test("keeps default host globals unavailable and default-denies networking", async () => {
     const vm = new VM();
     await vm.start();
 
-    expect(await vm.eval("typeof window")).toEqual({
-      ok: true,
-      value: "undefined",
-    });
-    expect(await vm.eval("typeof process")).toEqual({
-      ok: true,
-      value: "undefined",
-    });
+    expect(await vm.eval("typeof window")).toEqual({ ok: true, value: "undefined" });
+    expect(await vm.eval("typeof process")).toEqual({ ok: true, value: "undefined" });
 
     const result = await vm.eval("fetch('https://example.com')");
     expect(result.ok).toBe(false);
@@ -270,26 +198,15 @@ describe("VM", () => {
       expectVMFailure(await vm.eval(source), VMErrorCode.VMRuntimeError);
     }
 
-    expect(await vm.eval("globalThis.process")).toEqual({
-      ok: true,
-      value: undefined,
-    });
+    expect(await vm.eval("globalThis.process")).toEqual({ ok: true, value: undefined });
 
-    expectVMFailure(
-      await vm.eval("fetch('https://example.com')"),
-      VMErrorCode.VMSecurityError,
-    );
+    expectVMFailure(await vm.eval("fetch('https://example.com')"), VMErrorCode.VMSecurityError);
 
-    expect(await vm.eval("typeof XMLHttpRequest")).toEqual({
-      ok: true,
-      value: "function",
-    });
+    expect(await vm.eval("typeof XMLHttpRequest")).toEqual({ ok: true, value: "function" });
   });
 
   test("treats constructor-like names as VM data without exposing host objects", async () => {
-    const hostGlobal = globalThis as typeof globalThis & {
-      jsvmEscapedFromTest?: unknown;
-    };
+    const hostGlobal = globalThis as typeof globalThis & { jsvmEscapedFromTest?: unknown };
     const vm = new VM();
     await vm.start();
     delete hostGlobal.jsvmEscapedFromTest;
@@ -313,10 +230,7 @@ describe("VM", () => {
           ({}).prototype
         ];
       `),
-      ).toEqual({
-        ok: true,
-        value: [1, 2, 3, 4, 5, 6, true, undefined, undefined],
-      });
+      ).toEqual({ ok: true, value: [1, 2, 3, 4, 5, 6, true, undefined, undefined] });
 
       for (const source of [
         "window",
@@ -351,20 +265,11 @@ describe("VM", () => {
         "JSON.parse.constructor",
         "fetch.constructor",
       ]) {
-        expect(await vm.eval(source)).toEqual({
-          ok: true,
-          value: undefined,
-        });
+        expect(await vm.eval(source)).toEqual({ ok: true, value: undefined });
       }
-      expect(await vm.eval("Math.constructor")).toEqual({
-        ok: true,
-        value: undefined,
-      });
+      expect(await vm.eval("Math.constructor")).toEqual({ ok: true, value: undefined });
 
-      expect(await vm.eval("this === globalThis")).toEqual({
-        ok: true,
-        value: true,
-      });
+      expect(await vm.eval("this === globalThis")).toEqual({ ok: true, value: true });
       expect(hostGlobal.jsvmEscapedFromTest).toBeUndefined();
     } finally {
       delete hostGlobal.jsvmEscapedFromTest;
@@ -375,21 +280,13 @@ describe("VM", () => {
     const vm = new VM();
     await vm.start();
 
-    expect(
-      await vm.eval("[typeof eval, typeof Function, typeof AsyncFunction]"),
-    ).toEqual({
+    expect(await vm.eval("[typeof eval, typeof Function, typeof AsyncFunction]")).toEqual({
       ok: true,
       value: ["undefined", "undefined", "undefined"],
     });
     expectVMFailure(await vm.eval("eval('1 + 1')"), VMErrorCode.VMRuntimeError);
-    expectVMFailure(
-      await vm.eval("Function('return 1')()"),
-      VMErrorCode.VMRuntimeError,
-    );
-    expectVMFailure(
-      await vm.eval("AsyncFunction('return 1')()"),
-      VMErrorCode.VMRuntimeError,
-    );
+    expectVMFailure(await vm.eval("Function('return 1')()"), VMErrorCode.VMRuntimeError);
+    expectVMFailure(await vm.eval("AsyncFunction('return 1')()"), VMErrorCode.VMRuntimeError);
   });
 
   test("enables VM-interpreted eval and function constructors with dynamicCode", async () => {
@@ -411,20 +308,14 @@ describe("VM", () => {
       })();
       [directEval(), indirectValue, add(4, 5), noClosure];
     `),
-    ).toEqual({
-      ok: true,
-      value: [3, 4, 19, "undefined"],
-    });
+    ).toEqual({ ok: true, value: [3, 4, 19, "undefined"] });
 
     expect(
       await vm.eval(`
       const makeAsync = AsyncFunction("value", "return await value + 1");
       makeAsync(4);
     `),
-    ).toEqual({
-      ok: true,
-      value: 5,
-    });
+    ).toEqual({ ok: true, value: 5 });
   });
 
   test("keeps dynamic code execution inside the VM boundary", async () => {
@@ -468,10 +359,7 @@ describe("VM", () => {
         AsyncFunction("globalThis.${marker} += 1; return 8")();
         globalThis.${marker};
       `),
-      ).toEqual({
-        ok: true,
-        value: 3,
-      });
+      ).toEqual({ ok: true, value: 3 });
       expect(functionCalls).toBe(0);
       expect(evalCalls).toBe(0);
       expect(hostGlobal[marker]).toBeUndefined();
@@ -494,26 +382,14 @@ describe("VM", () => {
     const vm = new VM({ capabilities: { dynamicCode: true } });
     await vm.start();
 
-    expectVMFailure(
-      await vm.eval("eval('const =')"),
-      VMErrorCode.VMSyntaxError,
-    );
-    expectVMFailure(
-      await vm.eval("eval('throw \"boom\"')"),
-      VMErrorCode.VMRuntimeError,
-    );
-    expectVMFailure(
-      await vm.eval("Function('const =')()"),
-      VMErrorCode.VMSyntaxError,
-    );
+    expectVMFailure(await vm.eval("eval('const =')"), VMErrorCode.VMSyntaxError);
+    expectVMFailure(await vm.eval("eval('throw \"boom\"')"), VMErrorCode.VMRuntimeError);
+    expectVMFailure(await vm.eval("Function('const =')()"), VMErrorCode.VMSyntaxError);
     expectVMFailure(
       await vm.eval("Function('return missingBinding')()"),
       VMErrorCode.VMRuntimeError,
     );
-    expectVMFailure(
-      await vm.eval("Function('return 1')"),
-      VMErrorCode.BoundaryUnsupportedType,
-    );
+    expectVMFailure(await vm.eval("Function('return 1')"), VMErrorCode.BoundaryUnsupportedType);
   });
 
   test("wraps callable globals across the boundary", async () => {
@@ -530,10 +406,7 @@ describe("VM", () => {
     });
     await vm.start();
 
-    expect(await vm.eval("console.log('hello from guest'); 42")).toEqual({
-      ok: true,
-      value: 42,
-    });
+    expect(await vm.eval("console.log('hello from guest'); 42")).toEqual({ ok: true, value: 42 });
     expect(messages).toEqual(["hello from guest"]);
   });
 
@@ -554,10 +427,7 @@ describe("VM", () => {
     });
     await vm.start();
 
-    expect(await vm.eval("typeof secret")).toEqual({
-      ok: true,
-      value: "undefined",
-    });
+    expect(await vm.eval("typeof secret")).toEqual({ ok: true, value: "undefined" });
     expect(
       await vm.eval(`
         (async () => {
@@ -567,13 +437,8 @@ describe("VM", () => {
           return [answer, guestArg.nested.value, guestResult.nested.value];
         })()
       `),
-    ).toEqual({
-      ok: true,
-      value: [42, 1, 11],
-    });
-    expect(
-      (observedArgs[0] as { nested: { value: number } }).nested.value,
-    ).toBe(99);
+    ).toEqual({ ok: true, value: [42, 1, 11] });
+    expect((observedArgs[0] as { nested: { value: number } }).nested.value).toBe(99);
     expect(hostResult.nested.value).toBe(10);
   });
 
@@ -601,27 +466,19 @@ describe("VM", () => {
       })()
     `);
 
-    expect(result).toEqual({
-      ok: true,
-      value: [1, 2],
-    });
+    expect(result).toEqual({ ok: true, value: [1, 2] });
     expect(observedArg).toBeDefined();
     expect(observedArg?.nested.value).toBe(7);
     expect(Object.getPrototypeOf(observedArg as object)).toBeNull();
   });
 
   test("invokes guest getters when exporting capability arguments", async () => {
-    let observedArg:
-      | { readonly hits: number; readonly value: number }
-      | undefined;
+    let observedArg: { readonly hits: number; readonly value: number } | undefined;
     const vm = new VM({
       globals: {
         host: {
           receive(value) {
-            observedArg = value as {
-              readonly hits: number;
-              readonly value: number;
-            };
+            observedArg = value as { readonly hits: number; readonly value: number };
             return { ok: true };
           },
         },
@@ -646,26 +503,16 @@ describe("VM", () => {
     expect(result).toEqual({ ok: true, value: 1 });
     expect(observedArg).toEqual({ hits: 0, value: 1 });
     expect(Object.getPrototypeOf(observedArg as object)).toBeNull();
-    expect(
-      Object.getOwnPropertyDescriptor(observedArg, "value")?.get,
-    ).toBeUndefined();
+    expect(Object.getOwnPropertyDescriptor(observedArg, "value")?.get).toBeUndefined();
   });
 
   test("returns structured boundary errors for unsupported values crossing capabilities", async () => {
-    const invalidGlobal = new VM({
-      globals: {
-        unsafe: Symbol("host symbol") as never,
-      },
-    });
+    const invalidGlobal = new VM({ globals: { unsafe: Symbol("host symbol") as never } });
     await expect(invalidGlobal.start()).rejects.toMatchObject({
       code: VMErrorCode.BoundaryUnsupportedType,
     });
 
-    const invalidReturn = new VM({
-      globals: {
-        leak: () => Symbol("guest visible") as never,
-      },
-    });
+    const invalidReturn = new VM({ globals: { leak: () => Symbol("guest visible") as never } });
     await invalidReturn.start();
 
     const result = await invalidReturn.eval("(async () => await leak())()");
@@ -681,20 +528,13 @@ describe("VM", () => {
 
     expect(await vm.eval("data.nested.value = 2; data")).toEqual({
       ok: true,
-      value: {
-        nested: {
-          value: 2,
-        },
-      },
+      value: { nested: { value: 2 } },
     });
     expect(hostData.nested.value).toBe(1);
   });
 
   test("keeps injected globals isolated from later host and guest mutations", async () => {
-    const hostData = {
-      nested: { value: 1 },
-      list: [1, 2],
-    };
+    const hostData = { nested: { value: 1 }, list: [1, 2] };
     const vm = new VM({ globals: { data: hostData } });
     await vm.start();
 
@@ -705,26 +545,13 @@ describe("VM", () => {
         data.extra = { guest: true };
         data;
       `),
-    ).toEqual({
-      ok: true,
-      value: {
-        nested: { value: 2 },
-        list: [99, 2],
-        extra: { guest: true },
-      },
-    });
-    expect(hostData).toEqual({
-      nested: { value: 1 },
-      list: [1, 2],
-    });
+    ).toEqual({ ok: true, value: { nested: { value: 2 }, list: [99, 2], extra: { guest: true } } });
+    expect(hostData).toEqual({ nested: { value: 1 }, list: [1, 2] });
 
     hostData.nested.value = 42;
     hostData.list[1] = 77;
 
-    expect(await vm.eval("[data.nested.value, data.list[1]]")).toEqual({
-      ok: true,
-      value: [2, 2],
-    });
+    expect(await vm.eval("[data.nested.value, data.list[1]]")).toEqual({ ok: true, value: [2, 2] });
   });
 
   test("returns VM results as reconstructed host copies", async () => {
@@ -739,10 +566,7 @@ describe("VM", () => {
 
     (result.value as { nested: { value: number } }).nested.value = 99;
 
-    expect(await vm.eval("state.nested.value")).toEqual({
-      ok: true,
-      value: 1,
-    });
+    expect(await vm.eval("state.nested.value")).toEqual({ ok: true, value: 1 });
   });
 
   test("rejects function references crossing the public VM boundary", async () => {
@@ -760,23 +584,14 @@ describe("VM", () => {
     });
     await vm.start();
 
-    expectVMFailure(
-      await vm.eval("() => 1"),
-      VMErrorCode.BoundaryUnsupportedType,
-    );
+    expectVMFailure(await vm.eval("() => 1"), VMErrorCode.BoundaryUnsupportedType);
     expectVMFailure(
       await vm.eval("({ fn: function guestFunction() { return 1; } })"),
       VMErrorCode.BoundaryUnsupportedType,
     );
-    expectVMFailure(
-      await vm.eval("observe(() => 1)"),
-      VMErrorCode.BoundaryUnsupportedType,
-    );
+    expectVMFailure(await vm.eval("observe(() => 1)"), VMErrorCode.BoundaryUnsupportedType);
     expect(observed).toBe(false);
-    expectVMFailure(
-      await vm.eval("leakFunction()"),
-      VMErrorCode.BoundaryUnsupportedType,
-    );
+    expectVMFailure(await vm.eval("leakFunction()"), VMErrorCode.BoundaryUnsupportedType);
   });
 
   test("invokes VM global functions through opaque host handles", async () => {
@@ -800,23 +615,13 @@ describe("VM", () => {
     }
 
     const firstCall = await add.value.call(2, 3);
-    expect(firstCall).toEqual({
-      ok: true,
-      value: {
-        sum: 5,
-        nested: { fromGuest: true },
-      },
-    });
+    expect(firstCall).toEqual({ ok: true, value: { sum: 5, nested: { fromGuest: true } } });
     if (firstCall.ok) {
-      (firstCall.value as { nested: { fromGuest: boolean } }).nested.fromGuest =
-        false;
+      (firstCall.value as { nested: { fromGuest: boolean } }).nested.fromGuest = false;
     }
     expect(await add.value.call(1, 1)).toEqual({
       ok: true,
-      value: {
-        sum: 2,
-        nested: { fromGuest: true },
-      },
+      value: { sum: 2, nested: { fromGuest: true } },
     });
 
     const fail = vm.getGlobalFunction("fail");
@@ -825,19 +630,12 @@ describe("VM", () => {
       throw new Error("Expected failing global function handle.");
     }
     expectVMFailure(await fail.value.call(), VMErrorCode.VMRuntimeError);
-    expectVMFailure(
-      vm.getGlobalFunction("notCallable"),
-      VMErrorCode.VMRuntimeError,
-    );
+    expectVMFailure(vm.getGlobalFunction("notCallable"), VMErrorCode.VMRuntimeError);
 
     vm.reset();
     expectVMFailure(await add.value.call(1, 2), VMErrorCode.VMRuntimeError);
 
-    const limited = new VM({
-      capabilities: {
-        executionRules: { timeLimit: 1 },
-      },
-    });
+    const limited = new VM({ capabilities: { executionRules: { timeLimit: 1 } } });
     await limited.start();
     await limited.eval("function spin() { while (true) {} }");
     const spin = limited.getGlobalFunction("spin");
@@ -850,40 +648,22 @@ describe("VM", () => {
 
   test("uses deterministic number controls", async () => {
     const vmA = new VM({
-      capabilities: {
-        numbers: {
-          randomSeed: "seed",
-          dateNow: 1_697_059_200_000,
-        },
-      },
+      capabilities: { numbers: { randomSeed: "seed", dateNow: 1_697_059_200_000 } },
     });
     const vmB = new VM({
-      capabilities: {
-        numbers: {
-          randomSeed: "seed",
-          dateNow: 1_697_059_200_000,
-        },
-      },
+      capabilities: { numbers: { randomSeed: "seed", dateNow: 1_697_059_200_000 } },
     });
     await vmA.start();
     await vmB.start();
 
     const source = "[Math.random(), Math.random(), Date.now()]";
     expect(await vmA.eval(source)).toEqual(await vmB.eval(source));
-    expect(await vmA.eval("Date.now()")).toEqual({
-      ok: true,
-      value: 1_697_059_200_000,
-    });
+    expect(await vmA.eval("Date.now()")).toEqual({ ok: true, value: 1_697_059_200_000 });
   });
 
   test("resets deterministic Math.random and Date.now controls", async () => {
     const vm = new VM({
-      capabilities: {
-        numbers: {
-          randomSeed: "repeatable",
-          dateNow: 123_456,
-        },
-      },
+      capabilities: { numbers: { randomSeed: "repeatable", dateNow: 123_456 } },
     });
     await vm.start();
 
@@ -893,34 +673,18 @@ describe("VM", () => {
     vm.reset();
 
     expect(await vm.eval(source)).toEqual(first);
-    expect(await vm.eval("typeof guestState")).toEqual({
-      ok: true,
-      value: "undefined",
-    });
+    expect(await vm.eval("typeof guestState")).toEqual({ ok: true, value: "undefined" });
   });
 
   test("supports basic serializable snapshots", async () => {
-    const vm = new VM({
-      capabilities: {
-        numbers: {
-          randomSeed: "snapshot-seed",
-          dateNow: 10,
-        },
-      },
-    });
+    const vm = new VM({ capabilities: { numbers: { randomSeed: "snapshot-seed", dateNow: 10 } } });
     await vm.start();
     await vm.eval("answer = { value: 42 }");
 
     const restored = VM.fromSnapshot(await vm.snapshot());
 
-    expect(await restored.eval("answer.value")).toEqual({
-      ok: true,
-      value: 42,
-    });
-    expect(await restored.eval("Date.now()")).toEqual({
-      ok: true,
-      value: 10,
-    });
+    expect(await restored.eval("answer.value")).toEqual({ ok: true, value: 42 });
+    expect(await restored.eval("Date.now()")).toEqual({ ok: true, value: 10 });
   });
 
   test("snapshots clone serializable state and reject host capabilities", async () => {
@@ -932,16 +696,9 @@ describe("VM", () => {
     await vm.eval("state.nested.value = 2");
     const restored = VM.fromSnapshot(snapshot);
 
-    expect(await restored.eval("state.nested.value")).toEqual({
-      ok: true,
-      value: 1,
-    });
+    expect(await restored.eval("state.nested.value")).toEqual({ ok: true, value: 1 });
 
-    const capabilityVM = new VM({
-      globals: {
-        ping: () => "pong",
-      },
-    });
+    const capabilityVM = new VM({ globals: { ping: () => "pong" } });
     await capabilityVM.start();
 
     try {
@@ -981,13 +738,7 @@ describe("VM", () => {
     const restored = VM.fromSnapshot(snapshot);
 
     expect(await vm.eval("state.hits")).toEqual({ ok: true, value: 1 });
-    expect(await restored.eval("state")).toEqual({
-      ok: true,
-      value: {
-        value: 1,
-        hits: 1,
-      },
-    });
+    expect(await restored.eval("state")).toEqual({ ok: true, value: { value: 1, hits: 1 } });
   });
 
   test("disposal revokes VM operations", async () => {
@@ -996,15 +747,9 @@ describe("VM", () => {
     await vm.eval("value = 1");
     vm.dispose();
 
-    await expect(vm.eval("value")).rejects.toMatchObject({
-      code: VMErrorCode.VMDisposed,
-    });
-    await expect(vm.idle()).rejects.toMatchObject({
-      code: VMErrorCode.VMDisposed,
-    });
-    await expect(vm.start()).rejects.toMatchObject({
-      code: VMErrorCode.VMDisposed,
-    });
+    await expect(vm.eval("value")).rejects.toMatchObject({ code: VMErrorCode.VMDisposed });
+    await expect(vm.idle()).rejects.toMatchObject({ code: VMErrorCode.VMDisposed });
+    await expect(vm.start()).rejects.toMatchObject({ code: VMErrorCode.VMDisposed });
 
     for (const operation of [() => vm.reset(), () => vm.snapshot()]) {
       try {
@@ -1017,13 +762,7 @@ describe("VM", () => {
   });
 
   test("returns structured errors for syntax, runtime, and timeout failures", async () => {
-    const vm = new VM({
-      capabilities: {
-        executionRules: {
-          timeLimit: 1,
-        },
-      },
-    });
+    const vm = new VM({ capabilities: { executionRules: { timeLimit: 1 } } });
     await vm.start();
 
     const syntax = await vm.eval("const =");
@@ -1032,9 +771,7 @@ describe("VM", () => {
       expect(syntax.error.code).toBe(VMErrorCode.VMSyntaxError);
     }
 
-    const runtime = await vm.eval(
-      "({}).constructor.constructor('return this')()",
-    );
+    const runtime = await vm.eval("({}).constructor.constructor('return this')()");
     expect(runtime.ok).toBe(false);
     if (!runtime.ok) {
       expect(runtime.error.code).toBe(VMErrorCode.VMRuntimeError);
@@ -1044,30 +781,6 @@ describe("VM", () => {
     expect(timeout.ok).toBe(false);
     if (!timeout.ok) {
       expect(timeout.error.code).toBe(VMErrorCode.VMTimeoutError);
-    }
-  });
-
-  test("returns structured errors for step budget exhaustion", async () => {
-    const vm = new VM({
-      capabilities: {
-        executionRules: {
-          maxSteps: 10,
-        },
-      },
-    });
-    await vm.start();
-
-    const result = await vm.eval(`
-      let total = 0;
-      for (let i = 0; i < 50; i++) {
-        total += i;
-      }
-      total;
-    `);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe(VMErrorCode.VMStepsExceededError);
-      expect(result.error.details.path).toBe("maxSteps");
     }
   });
 
@@ -1085,30 +798,20 @@ describe("VM", () => {
     const runtimeError = expectVMFailure(runtime, VMErrorCode.VMRuntimeError);
     expect(runtimeError.details.valueType).toBe("string");
 
-    const security = await vm.eval(
-      "import('data:text/javascript,export default 1')",
-    );
-    const securityError = expectVMFailure(
-      security,
-      VMErrorCode.VMSecurityError,
-    );
+    const security = await vm.eval("import('data:text/javascript,export default 1')");
+    const securityError = expectVMFailure(security, VMErrorCode.VMSecurityError);
     expect(typeof securityError.details.reason).toBe("string");
   });
 
   test("unsupported public VM syntax fails clearly without host fallback execution", async () => {
     const marker = "__jsvmUnsupportedSyntaxCanary";
-    const hostGlobal = globalThis as typeof globalThis & {
-      [marker]?: unknown;
-    };
+    const hostGlobal = globalThis as typeof globalThis & { [marker]?: unknown };
     const vm = new VM();
     await vm.start();
 
     for (const source of ["with ({}) {}"]) {
       delete hostGlobal[marker];
-      const error = expectVMFailure(
-        await vm.eval(source),
-        VMErrorCode.VMRuntimeError,
-      );
+      const error = expectVMFailure(await vm.eval(source), VMErrorCode.VMRuntimeError);
       expect(error.details.reason).toBe("unsupported syntax");
       expect(hostGlobal[marker]).toBeUndefined();
     }
@@ -1128,16 +831,9 @@ describe("VM", () => {
 
   test("host-mediates fetch with allow rules and serialized responses", async () => {
     const originalFetch = globalThis.fetch;
-    const requests: {
-      url: string;
-      method: string;
-      headers: Record<string, string>;
-    }[] = [];
+    const requests: { url: string; method: string; headers: Record<string, string> }[] = [];
 
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({
         url: String(input),
         method: init?.method ?? "GET",
@@ -1147,10 +843,7 @@ describe("VM", () => {
       return new Response(JSON.stringify({ ok: true, url: String(input) }), {
         status: 201,
         statusText: "Created",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Reply": "yes",
-        },
+        headers: { "Content-Type": "application/json", "X-Reply": "yes" },
       });
     }) as typeof fetch;
 
@@ -1183,21 +876,10 @@ describe("VM", () => {
         `),
       ).toEqual({
         ok: true,
-        value: [
-          true,
-          201,
-          "Created",
-          "application/json",
-          true,
-          "https://example.com/api/data",
-        ],
+        value: [true, 201, "Created", "application/json", true, "https://example.com/api/data"],
       });
       expect(requests).toEqual([
-        {
-          url: "https://example.com/api/data",
-          method: "GET",
-          headers: { "X-API-Key": "secret" },
-        },
+        { url: "https://example.com/api/data", method: "GET", headers: { "X-API-Key": "secret" } },
       ]);
 
       expectVMFailure(
@@ -1205,9 +887,7 @@ describe("VM", () => {
         VMErrorCode.VMSecurityError,
       );
       expectVMFailure(
-        await vm.eval(
-          "fetch('https://example.com/api/data', { method: 'POST' })",
-        ),
+        await vm.eval("fetch('https://example.com/api/data', { method: 'POST' })"),
         VMErrorCode.VMSecurityError,
       );
     } finally {
@@ -1217,29 +897,14 @@ describe("VM", () => {
 
   test("dangerously evaluates URL scripts through network rules", async () => {
     const originalFetch = globalThis.fetch;
-    const requests: {
-      url: string;
-      method: string;
-      headers: Record<string, string>;
-    }[] = [];
+    const requests: { url: string; method: string; headers: Record<string, string> }[] = [];
 
-    globalThis.fetch = (async (
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ) => {
-      const url = String(input);
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({
-        url,
+        url: String(input),
         method: init?.method ?? "GET",
         headers: { ...(init?.headers as Record<string, string> | undefined) },
       });
-
-      if (url.endsWith("/slow.js")) {
-        return new Response("let i = 0; while (i < 10) { i += 1; } i;", {
-          status: 200,
-          headers: { "Content-Type": "text/javascript" },
-        });
-      }
 
       return new Response("remoteValue = 40; remoteValue + 2;", {
         status: 200,
@@ -1252,56 +917,27 @@ describe("VM", () => {
         capabilities: {
           networkingRules: [
             networkRule("cdn.example.com")
-              .allow({ methods: ["GET"], paths: ["/allowed.js", "/slow.js"] })
+              .allow({ methods: ["GET"], paths: ["/allowed.js"] })
               .setHeaders({ "X-VM": "yes" }),
           ],
         },
       });
       await vm.start();
 
-      expect(
-        await vm.dangerously.evaluateUrl("https://cdn.example.com/allowed.js"),
-      ).toEqual({
+      expect(await vm.dangerously.evaluateUrl("https://cdn.example.com/allowed.js")).toEqual({
         ok: true,
         value: 42,
       });
       expect(requests).toEqual([
-        {
-          url: "https://cdn.example.com/allowed.js",
-          method: "GET",
-          headers: { "X-VM": "yes" },
-        },
+        { url: "https://cdn.example.com/allowed.js", method: "GET", headers: { "X-VM": "yes" } },
       ]);
-
-      const requestsBeforeInvalidSteps = requests.length;
-      expectVMFailure(
-        await vm.dangerously.evaluateUrl("https://cdn.example.com/allowed.js", {
-          maxSteps: -1,
-        }),
-        VMErrorCode.VMRuntimeError,
-      );
-      expect(requests).toHaveLength(requestsBeforeInvalidSteps);
-
-      const requestsBeforeStepFailure = requests.length;
-      expectVMFailure(
-        await vm.dangerously.evaluateUrl("https://cdn.example.com/slow.js", {
-          maxSteps: 5,
-        }),
-        VMErrorCode.VMStepsExceededError,
-      );
-      expect(requests).toHaveLength(requestsBeforeStepFailure + 1);
-      expect(requests[requests.length - 1].url).toBe(
-        "https://cdn.example.com/slow.js",
-      );
 
       expectVMFailure(
         await vm.dangerously.eval("https://cdn.example.com/blocked.js"),
         VMErrorCode.VMSecurityError,
       );
       expectVMFailure(
-        await vm.dangerously.evaluateUrl("https://cdn.example.com/allowed.js", {
-          maxBytes: 4,
-        }),
+        await vm.dangerously.evaluateUrl("https://cdn.example.com/allowed.js", { maxBytes: 4 }),
         VMErrorCode.VMSecurityError,
       );
     } finally {
@@ -1316,19 +952,14 @@ describe("VM", () => {
       new Response("xhr body", {
         status: 202,
         statusText: "Accepted",
-        headers: {
-          "X-Test": "ok",
-        },
+        headers: { "X-Test": "ok" },
       })) as unknown as typeof fetch;
 
     try {
       const vm = new VM({
         capabilities: {
           networkingRules: [
-            networkRule("example.com").allow({
-              methods: ["POST"],
-              paths: ["/xhr"],
-            }),
+            networkRule("example.com").allow({ methods: ["POST"], paths: ["/xhr"] }),
           ],
         },
       });
@@ -1357,14 +988,7 @@ describe("VM", () => {
         `),
       ).toEqual({
         ok: true,
-        value: [
-          4,
-          202,
-          "Accepted",
-          "xhr body",
-          "ok",
-          ["rs:2", "rs:3", "rs:4", "load:202", "end"],
-        ],
+        value: [4, 202, "Accepted", "xhr body", "ok", ["rs:2", "rs:3", "rs:4", "load:202", "end"]],
       });
     } finally {
       globalThis.fetch = originalFetch;
@@ -1372,11 +996,7 @@ describe("VM", () => {
   });
 
   test("can still override fetch with an explicit host capability", async () => {
-    const vm = new VM({
-      capabilities: {
-        networkingRules: [networkRule("example.com").allow()],
-      },
-    });
+    const vm = new VM({ capabilities: { networkingRules: [networkRule("example.com").allow()] } });
     await vm.start();
 
     const explicit = new VM({
@@ -1388,14 +1008,9 @@ describe("VM", () => {
     });
     await explicit.start();
 
-    expect(
-      await explicit.eval("fetch('https://example.com/api/data')"),
-    ).toEqual({
+    expect(await explicit.eval("fetch('https://example.com/api/data')")).toEqual({
       ok: true,
-      value: {
-        ok: true,
-        url: "https://example.com/api/data",
-      },
+      value: { ok: true, url: "https://example.com/api/data" },
     });
   });
 });

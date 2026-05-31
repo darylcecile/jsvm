@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { VMError, VMErrorCode } from "../src/index";
 import { parseProgram } from "../src/parser";
 
@@ -7,9 +8,7 @@ describe("parser", () => {
     const marker = "__jsvmParserShouldNotExecute";
     delete (globalThis as Record<string, unknown>)[marker];
 
-    const program = parseProgram(
-      `globalThis.${marker} = true; const value = 1 + 2; value;`,
-    );
+    const program = parseProgram(`globalThis.${marker} = true; const value = 1 + 2; value;`);
 
     expect(program.type).toBe("Program");
     expect(program.sourceType).toBe("script");

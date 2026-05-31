@@ -1,17 +1,8 @@
 import { VMError, VMErrorCode } from "../boundary";
-import {
-  VMEnvironment,
-  createGlobalEnvironment,
-  createLexicalEnvironment,
-} from "./environment";
+import { VMEnvironment, createGlobalEnvironment, createLexicalEnvironment } from "./environment";
 import { createOrdinaryObject, type VMObject } from "./object-model";
 
-export type VMCompletionType =
-  | "normal"
-  | "return"
-  | "break"
-  | "continue"
-  | "throw";
+export type VMCompletionType = "normal" | "return" | "break" | "continue" | "throw";
 
 export interface VMCompletion<T = unknown> {
   readonly type: VMCompletionType;
@@ -58,17 +49,11 @@ export function isAbruptCompletion(completion: VMCompletion): boolean {
   return completion.type !== "normal";
 }
 
-export function unwrapNormalCompletion<T>(
-  completion: VMCompletion<T>,
-): T | undefined {
+export function unwrapNormalCompletion<T>(completion: VMCompletion<T>): T | undefined {
   if (completion.type !== "normal") {
-    throw new VMError(
-      VMErrorCode.VMRuntimeError,
-      "Expected a normal completion record.",
-      {
-        reason: completion.type,
-      },
-    );
+    throw new VMError(VMErrorCode.VMRuntimeError, "Expected a normal completion record.", {
+      reason: completion.type,
+    });
   }
 
   return completion.value;
@@ -83,10 +68,7 @@ export class ExecutionBudget {
 
   constructor(options: ExecutionBudgetOptions = {}) {
     this.maxSteps = normalizeNonNegativeInteger(options.maxSteps, "maxSteps");
-    this.timeLimitMs = normalizeNonNegativeNumber(
-      options.timeLimitMs,
-      "timeLimitMs",
-    );
+    this.timeLimitMs = normalizeNonNegativeNumber(options.timeLimitMs, "timeLimitMs");
     this.#now = options.now ?? (() => Date.now());
     this.#startedAt = this.#now();
   }
@@ -96,9 +78,7 @@ export class ExecutionBudget {
   }
 
   get remainingSteps(): number | undefined {
-    return this.maxSteps === undefined
-      ? undefined
-      : Math.max(0, this.maxSteps - this.#stepsUsed);
+    return this.maxSteps === undefined ? undefined : Math.max(0, this.maxSteps - this.#stepsUsed);
   }
 
   get elapsedMs(): number {
@@ -110,22 +90,11 @@ export class ExecutionBudget {
     this.#stepsUsed += normalizedCost;
 
     if (this.maxSteps !== undefined && this.#stepsUsed > this.maxSteps) {
-      throw new VMError(
-        VMErrorCode.VMStepsExceededError,
-        "Execution step budget exhausted.",
-        { reason, path: "maxSteps" },
-      );
+      throw budgetError("Execution step budget exhausted.", { reason, path: "maxSteps" });
     }
 
     if (this.timeLimitMs !== undefined && this.elapsedMs > this.timeLimitMs) {
-      throw budgetError(
-        VMErrorCode.VMTimeoutError,
-        "Execution time limit exceeded.",
-        {
-          reason,
-          path: "timeLimitMs",
-        },
-      );
+      throw budgetError("Execution time limit exceeded.", { reason, path: "timeLimitMs" });
     }
   }
 
@@ -144,13 +113,10 @@ export class VMExecutionContext {
   readonly budget: ExecutionBudget;
 
   constructor(options: VMExecutionContextOptions = {}) {
-    this.globalEnvironment =
-      options.globalEnvironment ?? createGlobalEnvironment();
+    this.globalEnvironment = options.globalEnvironment ?? createGlobalEnvironment();
     this.globalObject = options.globalObject ?? createOrdinaryObject();
-    this.lexicalEnvironment =
-      options.lexicalEnvironment ?? this.globalEnvironment;
-    this.variableEnvironment =
-      options.variableEnvironment ?? this.globalEnvironment;
+    this.lexicalEnvironment = options.lexicalEnvironment ?? this.globalEnvironment;
+    this.variableEnvironment = options.variableEnvironment ?? this.globalEnvironment;
     this.thisValue = options.thisValue ?? this.globalObject;
     this.budget =
       options.budget instanceof ExecutionBudget
@@ -174,9 +140,7 @@ export class VMExecutionContext {
       throw new VMError(
         VMErrorCode.VMRuntimeError,
         "Cannot leave a non-current lexical environment.",
-        {
-          reason: "lexical environment mismatch",
-        },
+        { reason: "lexical environment mismatch" },
       );
     }
 
@@ -184,21 +148,16 @@ export class VMExecutionContext {
       throw new VMError(
         VMErrorCode.VMRuntimeError,
         "Cannot leave the global lexical environment.",
-        {
-          reason: "global environment",
-        },
+        { reason: "global environment" },
       );
     }
 
-    this.lexicalEnvironment =
-      this.lexicalEnvironment.parent ?? this.globalEnvironment;
+    this.lexicalEnvironment = this.lexicalEnvironment.parent ?? this.globalEnvironment;
     return this.lexicalEnvironment;
   }
 }
 
-export function createExecutionBudget(
-  options: ExecutionBudgetOptions = {},
-): ExecutionBudget {
+export function createExecutionBudget(options: ExecutionBudgetOptions = {}): ExecutionBudget {
   return new ExecutionBudget(options);
 }
 
@@ -208,10 +167,7 @@ export function createExecutionContext(
   return new VMExecutionContext(options);
 }
 
-function normalizeNonNegativeInteger(
-  value: number | undefined,
-  name: string,
-): number | undefined {
+function normalizeNonNegativeInteger(value: number | undefined, name: string): number | undefined {
   if (value === undefined) {
     return undefined;
   }
@@ -231,10 +187,7 @@ function normalizePositiveInteger(value: number, name: string): number {
   return value;
 }
 
-function normalizeNonNegativeNumber(
-  value: number | undefined,
-  name: string,
-): number | undefined {
+function normalizeNonNegativeNumber(value: number | undefined, name: string): number | undefined {
   if (value === undefined) {
     return undefined;
   }
@@ -246,9 +199,6 @@ function normalizeNonNegativeNumber(
   return value;
 }
 
-function budgetError(
-  message: string,
-  details: Record<string, string>,
-): VMError {
+function budgetError(message: string, details: Record<string, string>): VMError {
   return new VMError(VMErrorCode.VMTimeoutError, message, details);
 }

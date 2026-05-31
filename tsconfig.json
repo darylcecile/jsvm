@@ -9,12 +9,7 @@
     "sourceMap": true,
     "outDir": "dist",
     "skipLibCheck": true,
-    "types": [
-      "bun-types"
-    ]
+    "types": ["bun-types"]
   },
-  "include": [
-    "src",
-    "test"
-  ]
+  "include": ["src", "test"]
 }
