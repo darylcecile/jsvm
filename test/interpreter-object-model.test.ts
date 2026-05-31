@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import {
   createArrayLikeObject,
   createOrdinaryObject,
@@ -24,13 +25,15 @@ describe("interpreter object model", () => {
 
     expect(Object.getPrototypeOf(object)).toBeNull();
     expect((object as { constructor?: unknown }).constructor).toBeUndefined();
-    expect(defineOwnProperty(object, "answer", {
-      configurable: true,
-      enumerable: true,
-      kind: "data",
-      value: 41,
-      writable: true,
-    })).toBe(true);
+    expect(
+      defineOwnProperty(object, "answer", {
+        configurable: true,
+        enumerable: true,
+        kind: "data",
+        value: 41,
+        writable: true,
+      }),
+    ).toBe(true);
 
     const descriptor = getOwnPropertyDescriptor(object, "answer");
 
@@ -84,13 +87,15 @@ describe("interpreter object model", () => {
       kind: "accessor",
     };
 
-    expect(defineOwnProperty(object, "value", {
-      configurable: true,
-      enumerable: false,
-      get: getter,
-      kind: "accessor",
-      set: setter,
-    })).toBe(true);
+    expect(
+      defineOwnProperty(object, "value", {
+        configurable: true,
+        enumerable: false,
+        get: getter,
+        kind: "accessor",
+        set: setter,
+      }),
+    ).toBe(true);
 
     const descriptor = getOwnPropertyDescriptor(object, "value");
 
@@ -105,11 +110,9 @@ describe("interpreter object model", () => {
     expect(typeof setter).toBe("object");
     expect(get(object, "value")).toBeUndefined();
     expect(set(object, "value", 1)).toBe(true);
-    expect(() => defineOwnProperty(
-      object,
-      "host",
-      hostDescriptor as VMPropertyDescriptorInput,
-    )).toThrow(TypeError);
+    expect(() =>
+      defineOwnProperty(object, "host", hostDescriptor as VMPropertyDescriptorInput),
+    ).toThrow(TypeError);
     expect(hostInvoked).toBe(false);
   });
 
@@ -122,11 +125,7 @@ describe("interpreter object model", () => {
       value: 1,
       writable: false,
     });
-    defineOwnProperty(object, "loose", {
-      configurable: true,
-      kind: "data",
-      value: 2,
-    });
+    defineOwnProperty(object, "loose", { configurable: true, kind: "data", value: 2 });
 
     expect(deleteProperty(object, "fixed")).toBe(false);
     expect(get(object, "fixed")).toBe(1);

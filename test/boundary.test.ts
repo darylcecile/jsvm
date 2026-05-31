@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import {
   VMError,
   VMErrorCode,
@@ -21,9 +22,7 @@ describe("boundary serialization", () => {
     const output = cloneBoundaryValue(input) as Record<string, unknown>;
 
     expect(Object.getPrototypeOf(output)).toBeNull();
-    expect(output).toMatchObject({
-      array: [1, undefined, "three"],
-    });
+    expect(output).toMatchObject({ array: [1, undefined, "three"] });
     expect(output.date).toEqual(input.date);
     expect(output.regexp).toEqual(input.regexp);
     expect(output.map).toBeInstanceOf(Map);
@@ -61,11 +60,7 @@ describe("boundary serialization", () => {
 
     expect(serializeBoundaryValue(capability)).toEqual({
       kind: "capability",
-      metadata: {
-        id: capability.metadata.id,
-        name: "sum",
-        arity: 1,
-      },
+      metadata: { id: capability.metadata.id, name: "sum", arity: 1 },
     });
 
     await expect(invokeBoundaryCapability(capability, [{ a: 2, b: 3 }])).resolves.toBe(5);

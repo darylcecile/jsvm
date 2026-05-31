@@ -166,9 +166,7 @@ Built-in globals currently installed by default include `undefined`, `NaN`, `Inf
 `eval()` and `evaluate()` always resolve to a structured result instead of throwing guest syntax/runtime/security failures:
 
 ```ts
-type VMResult<T = VMSerializableValue> =
-  | { ok: true; value: T }
-  | { ok: false; error: VMError };
+type VMResult<T = VMSerializableValue> = { ok: true; value: T } | { ok: false; error: VMError };
 ```
 
 Returned values are cloned across the boundary. Enumerable guest accessors are invoked and exported as data values; host object identity, prototypes, accessors, symbols, functions, promises, weak collections, and cycles do not cross as ordinary values.

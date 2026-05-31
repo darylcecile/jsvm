@@ -104,11 +104,10 @@ export function normalizeModuleLoader(
 
   for (const key of Object.keys(loader)) {
     if (key !== "resolve" && key !== "load") {
-      throw new VMError(
-        VMErrorCode.VMSecurityError,
-        `Unknown VM moduleLoader option "${key}".`,
-        { reason: "invalid module loader option", path: key },
-      );
+      throw new VMError(VMErrorCode.VMSecurityError, `Unknown VM moduleLoader option "${key}".`, {
+        reason: "invalid module loader option",
+        path: key,
+      });
     }
   }
 
@@ -148,10 +147,7 @@ export function normalizeModuleLoader(
         throw moduleDenied("load", normalizedRequest.specifier);
       }
 
-      return normalizeModuleSource(
-        await load(normalizedRequest),
-        normalizedRequest.specifier,
-      );
+      return normalizeModuleSource(await load(normalizedRequest), normalizedRequest.specifier);
     },
   });
 }
@@ -171,9 +167,7 @@ export function normalizeModuleResolveRequest(
   return freezeRequest(normalized);
 }
 
-export function normalizeModuleLoadRequest(
-  request: VMModuleLoadRequest,
-): VMModuleLoadRequest {
+export function normalizeModuleLoadRequest(request: VMModuleLoadRequest): VMModuleLoadRequest {
   const record = assertPlainRecord(request, "module load request", "$");
   assertKnownKeys(record, new Set(["specifier", "referrer", "attributes"]), "$");
 
@@ -186,9 +180,7 @@ export function normalizeModuleLoadRequest(
   return freezeRequest(normalized);
 }
 
-export function normalizeModuleResolution(
-  result: VMModuleResolveResult,
-): VMModuleResolution {
+export function normalizeModuleResolution(result: VMModuleResolveResult): VMModuleResolution {
   const specifier =
     typeof result === "string"
       ? normalizeModuleSpecifier(result, "$")
@@ -198,10 +190,7 @@ export function normalizeModuleResolution(
         );
 
   if (typeof result === "string") {
-    return Object.freeze({
-      type: "module-resolution" as const,
-      specifier,
-    });
+    return Object.freeze({ type: "module-resolution" as const, specifier });
   }
 
   const record = assertPlainRecord(result, "module resolve result", "$");
@@ -237,7 +226,11 @@ export function normalizeModuleSource(
   }
 
   const record = assertPlainRecord(result, "module load result", "$");
-  assertKnownKeys(record, new Set(["type", "specifier", "source", "sourceType", "attributes"]), "$");
+  assertKnownKeys(
+    record,
+    new Set(["type", "specifier", "source", "sourceType", "attributes"]),
+    "$",
+  );
 
   if (record.type !== undefined && record.type !== "module-source") {
     throw invalidModuleValue(
@@ -269,12 +262,7 @@ export function normalizeModuleSource(
       : normalizeModuleSpecifier(record.specifier, "$.specifier");
   const attributes = cloneModuleData(record.attributes, "$.attributes");
 
-  return freezeSource({
-    specifier,
-    source: record.source,
-    sourceType: "module",
-    attributes,
-  });
+  return freezeSource({ specifier, source: record.source, sourceType: "module", attributes });
 }
 
 function normalizeModuleSpecifier(value: unknown, path: string): string {
@@ -295,20 +283,13 @@ function normalizeModuleSpecifier(value: unknown, path: string): string {
   }
 
   if (CONTROL_CHARACTER_PATTERN.test(value)) {
-    throw invalidModuleValue(
-      path,
-      value,
-      "Module specifiers must not include control characters.",
-    );
+    throw invalidModuleValue(path, value, "Module specifiers must not include control characters.");
   }
 
   return value;
 }
 
-function normalizeOptionalModuleSpecifier(
-  value: unknown,
-  path: string,
-): string | undefined {
+function normalizeOptionalModuleSpecifier(value: unknown, path: string): string | undefined {
   if (value === undefined) {
     return undefined;
   }
@@ -316,11 +297,7 @@ function normalizeOptionalModuleSpecifier(
   return normalizeModuleSpecifier(value, path);
 }
 
-function cloneModuleData(
-  value: unknown,
-  path: string,
-  seen = new WeakSet<object>(),
-): VMModuleData {
+function cloneModuleData(value: unknown, path: string, seen = new WeakSet<object>()): VMModuleData {
   if (
     value === undefined ||
     value === null ||
@@ -451,9 +428,7 @@ function freezeModuleRecord(
   return Object.freeze(output);
 }
 
-function freezeRequest<T extends VMModuleResolveRequest | VMModuleLoadRequest>(
-  request: T,
-): T {
+function freezeRequest<T extends VMModuleResolveRequest | VMModuleLoadRequest>(request: T): T {
   const output = Object.create(null) as Record<string, VMModuleData | string>;
   output.specifier = request.specifier;
 
@@ -468,9 +443,7 @@ function freezeRequest<T extends VMModuleResolveRequest | VMModuleLoadRequest>(
   return Object.freeze(output) as unknown as T;
 }
 
-function freezeResolution(
-  resolution: Omit<VMModuleResolution, "type">,
-): VMModuleResolution {
+function freezeResolution(resolution: Omit<VMModuleResolution, "type">): VMModuleResolution {
   const output = Object.create(null) as Record<string, VMModuleData | string>;
   output.type = "module-resolution";
   output.specifier = resolution.specifier;
@@ -516,11 +489,7 @@ function assertKnownKeys(
   }
 }
 
-function assertPlainRecord(
-  value: unknown,
-  label: string,
-  path: string,
-): Record<string, unknown> {
+function assertPlainRecord(value: unknown, label: string, path: string): Record<string, unknown> {
   if (!isPlainObject(value)) {
     throw invalidModuleValue(path, value, `VM ${label} must be a plain object.`);
   }
@@ -532,10 +501,7 @@ function moduleDenied(operation: "resolve" | "load", specifier: string): VMError
   return new VMError(
     VMErrorCode.VMSecurityError,
     `VM module ${operation} denied for "${specifier}".`,
-    {
-      path: specifier,
-      reason: "module loader denied",
-    },
+    { path: specifier, reason: "module loader denied" },
   );
 }
 

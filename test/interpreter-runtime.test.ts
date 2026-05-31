@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { createCapability, VMError, VMErrorCode } from "../src/boundary";
 import {
   VMEnvironment,
